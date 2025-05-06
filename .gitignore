@@ -1,0 +1,7 @@
+.ccache/
+.cache/
+.repo/
+.git/
+build
+build_Debug
+build_Release

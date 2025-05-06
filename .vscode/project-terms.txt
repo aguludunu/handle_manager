@@ -1,0 +1,80 @@
+# 专业词汇
+HMI
+
+# 项目名称和缩写
+navi
+mxnavi
+
+# 项目特定词汇
+MXLOG
+navisdk
+Huoshan
+3DCM
+
+# 系统的API和类型
+endmntent
+
+# 开源库
+ABSL
+libuv
+kLibuv
+Libuv
+xsimd
+ubsan
+tsan
+asan
+NDSC
+rijndael
+
+# 特定的技术术语
+algo
+impl
+
+# 工具与技术
+ASAN
+gtest
+clangd
+Makefiles
+PERFETTO
+sonarlint
+startuml
+enduml
+
+# 编译器
+fsanitize
+fvisibility
+Wextra
+Woverloaded
+Wpointer
+Werror
+ggdb3
+
+# 自定义类型名
+DCMsgUpload
+myenum
+
+# 著名人物
+zhut
+zhutao
+sbzhut
+
+# DBA中的子模块
+MXDBA
+MXDBS
+
+# DBA中的类型
+bbid
+urids
+bbtype
+FTX
+
+# DBA中的术语
+DBSDAO
+daos
+
+# NDS中的术语
+NDS
+NKS
+zserio
+ZSERIO
+bmd

@@ -1,0 +1,260 @@
+Checks:
+'-*,
+bugprone-argument-comment,
+bugprone-assert-side-effect,
+bugprone-bad-signal-to-kill-thread,
+bugprone-branch-clone,
+bugprone-copy-constructor-init,
+bugprone-dangling-handle,
+bugprone-dynamic-static-initializers,
+bugprone-fold-init-type,
+bugprone-forward-declaration-namespace,
+bugprone-forwarding-reference-overload,
+bugprone-inaccurate-erase,
+bugprone-incorrect-roundings,
+bugprone-integer-division,
+bugprone-lambda-function-name,
+bugprone-macro-parentheses,
+bugprone-macro-repeated-side-effects,
+bugprone-misplaced-operator-in-strlen-in-alloc,
+bugprone-misplaced-pointer-arithmetic-in-alloc,
+bugprone-misplaced-widening-cast,
+bugprone-move-forwarding-reference,
+bugprone-multiple-statement-macro,
+bugprone-no-escape,
+bugprone-parent-virtual-call,
+bugprone-posix-return,
+bugprone-reserved-identifier,
+bugprone-sizeof-container,
+bugprone-sizeof-expression,
+bugprone-spuriously-wake-up-functions,
+bugprone-string-constructor,
+bugprone-string-integer-assignment,
+bugprone-string-literal-with-embedded-nul,
+bugprone-suspicious-enum-usage,
+bugprone-suspicious-include,
+bugprone-suspicious-memset-usage,
+bugprone-suspicious-missing-comma,
+bugprone-suspicious-semicolon,
+bugprone-suspicious-string-compare,
+bugprone-suspicious-memory-comparison,
+bugprone-suspicious-realloc-usage,
+bugprone-swapped-arguments,
+bugprone-terminating-continue,
+bugprone-throw-keyword-missing,
+bugprone-too-small-loop-variable,
+bugprone-undefined-memory-manipulation,
+bugprone-undelegated-constructor,
+bugprone-unhandled-self-assignment,
+bugprone-unused-raii,
+bugprone-unused-return-value,
+bugprone-use-after-move,
+bugprone-virtual-near-miss,
+cert-dcl21-cpp,
+cert-dcl58-cpp,
+cert-err34-c,
+cert-err52-cpp,
+cert-err60-cpp,
+cert-flp30-c,
+cert-msc50-cpp,
+cert-msc51-cpp,
+cert-str34-c,
+cppcoreguidelines-interfaces-global-init,
+cppcoreguidelines-narrowing-conversions,
+cppcoreguidelines-pro-type-member-init,
+cppcoreguidelines-pro-type-static-cast-downcast,
+cppcoreguidelines-slicing,
+google-default-arguments,
+google-explicit-constructor,
+google-runtime-operator,
+hicpp-exception-baseclass,
+hicpp-multiway-paths-covered,
+misc-misplaced-const,
+misc-new-delete-overloads,
+misc-no-recursion,
+misc-non-copyable-objects,
+misc-throw-by-value-catch-by-reference,
+misc-unconventional-assign-operator,
+misc-uniqueptr-reset-release,
+modernize-avoid-bind,
+modernize-concat-nested-namespaces,
+modernize-deprecated-headers,
+modernize-deprecated-ios-base-aliases,
+modernize-loop-convert,
+modernize-make-shared,
+modernize-make-unique,
+modernize-pass-by-value,
+modernize-raw-string-literal,
+modernize-redundant-void-arg,
+modernize-replace-auto-ptr,
+modernize-replace-disallow-copy-and-assign-macro,
+modernize-replace-random-shuffle,
+modernize-return-braced-init-list,
+modernize-shrink-to-fit,
+modernize-unary-static-assert,
+modernize-use-auto,
+modernize-use-bool-literals,
+modernize-use-emplace,
+modernize-use-equals-default,
+modernize-use-equals-delete,
+modernize-use-nodiscard,
+modernize-use-noexcept,
+modernize-use-nullptr,
+modernize-use-override,
+modernize-use-transparent-functors,
+modernize-use-uncaught-exceptions,
+mpi-buffer-deref,
+mpi-type-mismatch,
+openmp-use-default-none,
+performance-faster-string-find,
+performance-for-range-copy,
+performance-implicit-conversion-in-loop,
+performance-inefficient-algorithm,
+performance-inefficient-string-concatenation,
+performance-inefficient-vector-operation,
+performance-move-const-arg,
+performance-move-constructor-init,
+performance-no-automatic-move,
+performance-noexcept-move-constructor,
+performance-trivially-destructible,
+performance-type-promotion-in-math-fn,
+performance-unnecessary-copy-initialization,
+performance-unnecessary-value-param,
+portability-simd-intrinsics,
+readability-avoid-const-params-in-decls,
+readability-const-return-type,
+readability-container-size-empty,
+readability-convert-member-functions-to-static,
+readability-delete-null-pointer,
+readability-deleted-default,
+readability-inconsistent-declaration-parameter-name,
+readability-make-member-function-const,
+readability-misleading-indentation,
+readability-misplaced-array-index,
+readability-non-const-parameter,
+readability-redundant-control-flow,
+readability-redundant-declaration,
+readability-redundant-function-ptr-dereference,
+readability-redundant-smartptr-get,
+readability-redundant-string-cstr,
+readability-redundant-string-init,
+readability-simplify-subscript-expr,
+readability-static-accessed-through-instance,
+readability-static-definition-in-anonymous-namespace,
+readability-string-compare,
+readability-uniqueptr-delete-release,
+readability-use-anyofallof,
+bugprone-non-zero-enum-to-bool-conversion,
+bugprone-infinite-loop,
+bugprone-not-null-terminated-result,
+bugprone-string-constructor,
+clang-analyzer-cplusplus.InnerPointer,
+clang-analyzer-core.uninitialized.CapturedBlockVariable,
+clang-analyzer-cplusplus.Move,
+clang-analyzer-cplusplus.NewDeleteLeaks,
+readability-identifier-naming,
+'
+# 保留原有的所有错误，仅对命名检查设置为警告
+WarningsAsErrors: "*,-readability-identifier-naming*"
+HeaderFilterRegex: ".*"
+
+FormatStyle: file
+
+CheckOptions:
+  # 类名必须使用驼峰命名法 (如 MyClass)
+  - key:             readability-identifier-naming.ClassCase
+    value:           CamelCase
+
+  # 类成员变量使用小写字母加下划线 (如 member_variable)
+  - key:             readability-identifier-naming.ClassMemberCase
+    value:           lower_case
+
+  # constexpr 变量使用驼峰命名法，以 k 开头 (如 kConstValue)
+  - key:             readability-identifier-naming.ConstexprVariableCase
+    value:           CamelCase
+  - key:             readability-identifier-naming.ConstexprVariablePrefix
+    value:           k
+
+  # 枚举类型名使用驼峰命名法 (如 ColorType)
+  - key:             readability-identifier-naming.EnumCase
+    value:           CamelCase
+
+  # 枚举常量使用驼峰命名法，以 k 开头 (如 kRedColor)
+  - key:             readability-identifier-naming.EnumConstantCase
+    value:           CamelCase
+  - key:             readability-identifier-naming.EnumConstantPrefix
+    value:           k
+
+  # 函数名使用驼峰命名法 (如 DoSomething)
+  - key:             readability-identifier-naming.FunctionCase
+    value:           CamelCase
+
+  # 全局常量使用驼峰命名法，以 k 开头 (如 kGlobalValue)
+  - key:             readability-identifier-naming.GlobalConstantCase
+    value:           CamelCase
+  - key:             readability-identifier-naming.GlobalConstantPrefix
+    value:           k
+
+  # 静态常量使用驼峰命名法，以 k 开头 (如 kStaticValue)
+  - key:             readability-identifier-naming.StaticConstantCase
+    value:           CamelCase
+  - key:             readability-identifier-naming.StaticConstantPrefix
+    value:           k
+
+  # 静态变量使用小写字母加下划线 (如 static_value)
+  - key:             readability-identifier-naming.StaticVariableCase
+    value:           lower_case
+
+  # 宏定义使用大写字母加下划线 (如 MACRO_DEFINE)
+  - key:             readability-identifier-naming.MacroDefinitionCase
+    value:           UPPER_CASE
+
+  # 宏定义的忽略正则表达式模式，匹配纯大写字母加下划线的情况
+  - key:             readability-identifier-naming.MacroDefinitionIgnoredRegexp
+    value:           '^[A-Z]+(_[A-Z]+)*_$'
+
+  # 成员变量使用小写字母加下划线 (如 member_var)
+  - key:             readability-identifier-naming.MemberCase
+    value:           lower_case
+
+  # 私有成员变量以下划线结尾 (如 private_member_)
+  - key:             readability-identifier-naming.PrivateMemberSuffix
+    value:           _
+
+  # Protected成员变量以下划线结尾 (如 protected_member_)
+  - key:             readability-identifier-naming.ProtectedMemberSuffix
+    value:           _
+
+  # 公有成员变量没有后缀
+  - key:             readability-identifier-naming.PublicMemberSuffix
+    value:           ''
+
+  # 命名空间使用小写字母加下划线 (如 my_namespace)
+  - key:             readability-identifier-naming.NamespaceCase
+    value:           lower_case
+
+  # 函数参数使用小写字母加下划线 (如 input_param)
+  - key:             readability-identifier-naming.ParameterCase
+    value:           lower_case
+
+  # 类型别名使用驼峰命名法 (如 using MyType = int)
+  - key:             readability-identifier-naming.TypeAliasCase
+    value:           CamelCase
+
+  # typedef 定义的类型使用驼峰命名法 (如 typedef int MyInteger)
+  - key:             readability-identifier-naming.TypedefCase
+    value:           CamelCase
+
+  # 变量名使用小写字母加下划线 (如 local_var)
+  - key:             readability-identifier-naming.VariableCase
+    value:           lower_case
+
+  # 忽略类似 main 函数的命名规则检查
+  - key:             readability-identifier-naming.IgnoreMainLikeFunctions
+    value:           1
+
+  # 其他规则
+  - key: readability-identifier-naming.IgnoredShortNames
+    value: 'i|j|k|x|y|z'
+  - key: readability-identifier-naming.RejectBadNames
+    value: 'tmp|temp|foo|bar|baz'

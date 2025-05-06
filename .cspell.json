@@ -1,0 +1,150 @@
+{
+    // 配置文件版本号
+    "version": "0.2",
+    // 设置基础语言为英语
+    "language": "en",
+    // 启用要使用的字典
+    "dictionaries": [
+        // C++ 相关术语字典
+        "cpp",
+        // C 语言相关术语
+        "c",
+        // 软件开发通用术语
+        "softwareTerms",
+        // 常见公司名称
+        "companies",
+        // 项目自定义术语
+        "project-terms"
+    ],
+    // 定义项目特定的字典
+    "dictionaryDefinitions": [
+        {
+            "name": "project-terms",
+            // 相对于配置文件的路径
+            "path": ".vscode/project-terms.txt",
+            "description": "项目特定术语",
+            // 允许通过 VS Code 命令添加词汇到此字典
+            "addWords": true
+        }
+    ],
+    // 忽略的文件和目录
+    "ignorePaths": [
+        // 忽略构建目录
+        "build/**",
+        "out/**",
+        // 忽略第三方库
+        "third_party/**",
+        "thirdparty/**",
+        "extern/**",
+        // 忽略版本控制目录
+        ".git/**",
+        ".repo/**",
+        // 忽略VS Code设置目录
+        ".vscode/**",
+        // 忽略编译输出
+        "*.o",
+        "*.obj",
+        "*.exe",
+        "*.dll",
+        "*.so",
+        "*.dylib",
+        "*.idx",
+        // 忽略压缩文件
+        "*.zip",
+        "*.tar",
+        "*.gz",
+        // 忽略依赖管理目录
+        "vcpkg/**",
+        "deps/**"
+    ],
+    // 始终视为正确的单词列表
+    "words": [
+        // C++标准库相关
+        "iostream",
+        "cstdio",
+        "cstring",
+        "cstdlib",
+        "fstream",
+        "sstream",
+        "nullptr",
+        "noexcept",
+        "constexpr",
+        // 常用类型
+        "uint",
+        "size_t",
+        "ptrdiff",
+        // 常用宏
+        "ifdef",
+        "ifndef",
+        "endif",
+        "pragma",
+        "stdin",
+        "stdout",
+        "stderr",
+        // STL容器
+        "vector",
+        "deque",
+        "queue",
+        "stack",
+        "unordered",
+        // 常用函数
+        "sprintf",
+        "printf",
+        "scanf",
+        "malloc",
+        "realloc",
+        "memcpy",
+        "memset",
+        "strcpy",
+        "strlen",
+        // 编译器相关
+        "gcc",
+        "clang",
+        "msvc",
+        "mingw"
+    ],
+    // 文件类型特定设置
+    "languageSettings": [
+        {
+            // 针对C++源文件
+            "languageId": "cpp",
+            // 允许使用下划线的命名方式
+            "allowCompoundWords": true,
+            // 最小单词长度
+            "minWordLength": 3,
+            // dictionaries specific to C++ files
+            "dictionaries": [
+                "cpp"
+            ]
+        },
+        {
+            // 针对C头文件
+            "languageId": "c",
+            "allowCompoundWords": true,
+            "minWordLength": 3
+        },
+        {
+            // 针对CMake文件
+            "languageId": "cmake",
+            "allowCompoundWords": true,
+            "dictionaries": [
+                "cmake"
+            ]
+        }
+    ],
+    // 允许使用下划线的命名方式（全局设置）
+    "allowCompoundWords": true,
+    // 最大问题数（每个文件）
+    "maxNumberOfProblems": 100,
+    // 最小单词长度
+    "minWordLength": 3,
+    // 忽略以下正则表达式匹配的内容
+    "ignoreRegExpList": [
+        // 忽略十六进制数
+        "0x[a-fA-F0-9]+",
+        // 忽略版本号
+        "\\d+\\.\\d+\\.\\d+",
+        // 忽略 include 守卫
+        "__[A-Z0-9_]+_H__?"
+    ]
+}

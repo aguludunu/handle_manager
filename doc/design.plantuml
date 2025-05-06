@@ -1,0 +1,104 @@
+@startuml database_layer_structure
+
+' 使用布局控制
+skinparam {
+  packageStyle rectangle
+  shadowing false
+  handwritten false
+  linetype polyline
+  defaultFontName Microsoft YaHei
+  defaultTextAlignment center
+  padding 5
+  backgroundColor white
+}
+
+' 定义布局
+top to bottom direction
+
+' 定义组件
+' package "服务层" {
+'   [service] as service
+
+'   ' 定义Service
+'   package "service1" as service1_pkg {
+'     [dao_impl1] as dao_impl1
+'     [model1] as model1
+'     [storage1] as storage1
+
+'     dao_interface1 -down-> dao_impl1
+'     dao_impl1 -down-> model1
+'     model1 -down-> storage1
+'   }
+
+'   package "dao2" as dao2_pkg {
+'     [dao_interface] as dao_interface2
+'     [dao_impl2] as dao_impl2
+'     [model2] as model2
+'     [storage2] as storage2
+
+'     dao_interface2 -down-> dao_impl2
+'     dao_impl2 -down-> model2
+'     model2 -down-> storage2
+'   }
+
+'   ' dao_manager连接到各个DAO
+'   dao_manager -down-> storage1
+'   dao_manager -down-> storage2
+
+'   ' 水平排列
+'   ' dao1_pkg -[hidden]right-> dao2_pkg
+' }
+
+package "数据库访问层" {
+  [dao_manager] as dao_manager
+
+  [storage1] as storage1
+  [storage2] as storage2
+
+  ' ' 定义DAO对象
+  ' package "dao1" as dao1_pkg {
+  '   [dao_interface] as dao_interface1
+  '   [dao_impl1] as dao_impl1
+  '   [model1] as model1
+  '   [storage1] as storage1
+
+  '   dao_interface1 -down-> dao_impl1
+  '   dao_impl1 -down-> model1
+  '   model1 -down-> storage1
+  ' }
+
+  ' package "dao2" as dao2_pkg {
+  '   [dao_interface] as dao_interface2
+  '   [dao_impl2] as dao_impl2
+  '   [model2] as model2
+  '   [storage2] as storage2
+
+  '   dao_interface2 -down-> dao_impl2
+  '   dao_impl2 -down-> model2
+  '   model2 -down-> storage2
+  ' }
+
+  ' dao_manager连接到各个DAO
+  dao_manager -down-> storage1
+  dao_manager -down-> storage2
+
+  ' 水平排列
+  ' dao1_pkg -[hidden]right-> dao2_pkg
+}
+
+' ORM层
+package "ORM层" {
+  [sqlite_orm] as orm
+}
+
+' 数据库引擎层
+package "数据库引擎层" {
+  [nds_sqlite] as sqlite
+}
+
+' 层级关系
+storage1 -down-> orm
+storage2 -down-> orm
+orm -down-> sqlite
+
+@enduml

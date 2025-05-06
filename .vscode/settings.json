@@ -1,0 +1,129 @@
+{
+  // "files.associations": {
+  //   "future": "cpp",
+  //   "cctype": "cpp",
+  //   "clocale": "cpp",
+  //   "cmath": "cpp",
+  //   "cstdarg": "cpp",
+  //   "cstddef": "cpp",
+  //   "cstdio": "cpp",
+  //   "cstdlib": "cpp",
+  //   "cstring": "cpp",
+  //   "ctime": "cpp",
+  //   "cwchar": "cpp",
+  //   "cwctype": "cpp",
+  //   "any": "cpp",
+  //   "array": "cpp",
+  //   "atomic": "cpp",
+  //   "bit": "cpp",
+  //   "*.tcc": "cpp",
+  //   "bitset": "cpp",
+  //   "charconv": "cpp",
+  //   "chrono": "cpp",
+  //   "compare": "cpp",
+  //   "concepts": "cpp",
+  //   "condition_variable": "cpp",
+  //   "cstdint": "cpp",
+  //   "deque": "cpp",
+  //   "list": "cpp",
+  //   "map": "cpp",
+  //   "set": "cpp",
+  //   "string": "cpp",
+  //   "unordered_map": "cpp",
+  //   "vector": "cpp",
+  //   "exception": "cpp",
+  //   "algorithm": "cpp",
+  //   "functional": "cpp",
+  //   "iterator": "cpp",
+  //   "memory": "cpp",
+  //   "memory_resource": "cpp",
+  //   "numeric": "cpp",
+  //   "optional": "cpp",
+  //   "random": "cpp",
+  //   "ratio": "cpp",
+  //   "string_view": "cpp",
+  //   "system_error": "cpp",
+  //   "tuple": "cpp",
+  //   "type_traits": "cpp",
+  //   "utility": "cpp",
+  //   "initializer_list": "cpp",
+  //   "iomanip": "cpp",
+  //   "iosfwd": "cpp",
+  //   "iostream": "cpp",
+  //   "istream": "cpp",
+  //   "limits": "cpp",
+  //   "mutex": "cpp",
+  //   "new": "cpp",
+  //   "numbers": "cpp",
+  //   "ostream": "cpp",
+  //   "semaphore": "cpp",
+  //   "span": "cpp",
+  //   "sstream": "cpp",
+  //   "stdexcept": "cpp",
+  //   "stop_token": "cpp",
+  //   "streambuf": "cpp",
+  //   "thread": "cpp",
+  //   "typeinfo": "cpp",
+  //   "variant": "cpp",
+  //   "complex": "cpp",
+  //   "format": "cpp",
+  //   "text_encoding": "cpp",
+  //   "__nullptr": "cpp"
+  // },
+  // -------------------------------------------------------------------------------------------------------
+  // clangd
+  // -------------------------------------------------------------------------------------------------------
+  "clangd.arguments": [
+    "--background-index",
+    "--compile-commands-dir=${workspaceFolder}/build_${buildType}",
+    "--completion-style=detailed",
+    "--header-insertion=never",
+    "--pch-storage=memory",
+    "-j=8",
+    "--clang-tidy",
+    "--all-scopes-completion",
+    "--completion-parse=auto",
+    "--cross-file-rename",
+    "--function-arg-placeholders",
+    "--log=verbose"
+  ],
+  "clangd.checkUpdates": true,
+  "clangd.onConfigChanged": "restart",
+  // -------------------------------------------------------------------------------------------------------
+  // git
+  // -------------------------------------------------------------------------------------------------------
+  "git.ignoreLimitWarning": true,
+  "search.exclude": {
+    "**/*.o": true,
+    "**/*.idx": true,
+    "**/build_*/**": true,
+    "**/.git": true
+  },
+  "files.exclude": {
+    "**/*.o": true,
+    "**/*.idx": true,
+    "**/.git": true,
+    "**/.svn": true,
+    "**/.hg": true,
+    "**/CVS": true,
+    "**/.DS_Store": true
+  },
+  // "cmake.configureArgs": [
+  //   "-DCMAKE_C_COMPILER=clang",
+  //   "-DCMAKE_CXX_COMPILER=clang++"
+  // ],
+  // -------------------------------------------------------------------------------------------------------
+  // CMake
+  // -------------------------------------------------------------------------------------------------------
+  "cmake.buildArgs": ["-j8"],
+  "cmake.configureOnOpen": true,
+  "cmake.generator": "Unix Makefiles",
+  "cmake.exportCompileCommandsFile": true,
+  "cmake.buildDirectory": "${workspaceFolder}/build_${buildType}",
+  "sonarlint.pathToCompileCommands": "${workspaceFolder}/compile_commands.json"
+  // "sonarlint.analysisExcludesStandalone": [
+  //   "${workspaceFolder}/navisdk/middleware/dba/sqlite_wrapper/nds_sqlite/**/*",
+  //   "${workspaceFolder}/navisdk/middleware/dba/formats/**/*",
+  //   "${workspaceFolder}/common/centauri/thirdparty/**/*"
+  // ]
+}
