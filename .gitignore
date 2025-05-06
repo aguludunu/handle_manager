@@ -5,3 +5,4 @@
 build
 build_Debug
 build_Release
+compile_commands.json
