@@ -128,3 +128,9 @@ target_link_libraries(read_db PRIVATE MxDBANdsSqlite)
 
 add_executable(orm_test ${CMAKE_CURRENT_SOURCE_DIR}/orm_test.cpp)
 target_link_libraries(orm_test PRIVATE MxDBANdsSqlite sqlite_orm)
+
+add_executable(handle_manager_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/handle_manager_sqlite.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/handle_manager_sqlite.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/handle_manager_example.cpp )
+target_link_libraries(handle_manager_test PRIVATE MxDBANdsSqlite sqlite_orm)
