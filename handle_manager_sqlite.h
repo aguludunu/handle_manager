@@ -1,11 +1,12 @@
 #pragma once
 
-#include <any>
 #include <chrono>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
+#include <tuple>
+#include <typeindex>
 #include <unordered_map>
 
 namespace mx::dba::dbs {
@@ -17,8 +18,8 @@ struct HandleKey {
   int param4{0};
 
   friend bool operator==(const HandleKey& lhs, const HandleKey& rhs) {
-    return lhs.param1 == rhs.param1 && lhs.param2 == rhs.param2 && lhs.param3 == rhs.param3 &&
-           lhs.param4 == rhs.param4;
+    return std::tie(lhs.param1, lhs.param2, lhs.param3, lhs.param4) ==
+           std::tie(rhs.param1, rhs.param2, rhs.param3, rhs.param4);
   }
 };
 
@@ -29,9 +30,49 @@ struct HandleKeyHash {
   }
 };
 
+// 类型擦除接口
+class HandleBase {
+ public:
+  virtual ~HandleBase() = default;
+  [[nodiscard]] virtual const std::type_info& GetType() const = 0;
+};
+
+// 类型安全的Handle包装器
+template <typename T>
+class TypedHandle : public HandleBase {
+ public:
+  explicit TypedHandle(std::shared_ptr<T> handle) : handle_(std::move(handle)) {}
+  ~TypedHandle() override = default;
+
+  [[nodiscard]] const std::type_info& GetType() const override { return typeid(T); }
+  std::shared_ptr<T> GetHandle() const { return handle_; }
+
+ private:
+  std::shared_ptr<T> handle_;
+};
+
+// 替代HandleInfo，使用类型安全的设计
 struct HandleInfo {
-  std::any handle;
+  std::shared_ptr<HandleBase> handle_wrapper;
   std::chrono::steady_clock::time_point last_used;
+};
+
+// 组合键：HandleKey + 类型
+struct TypedHandleKey {
+  HandleKey key;
+  std::type_index type_idx;
+
+  friend bool operator==(const TypedHandleKey& lhs, const TypedHandleKey& rhs) {
+    return lhs.key == rhs.key && lhs.type_idx == rhs.type_idx;
+  }
+};
+
+// TypedHandleKey的哈希函数
+struct TypedHandleKeyHash {
+  std::size_t operator()(const TypedHandleKey& typed_key) const {
+    HandleKeyHash key_hasher;
+    return key_hasher(typed_key.key) ^ std::hash<std::type_index>()(typed_key.type_idx);
+  }
 };
 
 class SqliteHandleManager {
@@ -53,35 +94,35 @@ class SqliteHandleManager {
                                        std::function<std::shared_ptr<StorageType>()> creator_func) {
     std::lock_guard lock(mutex_);
 
-    if (auto it = handles_.find(key); it != handles_.end()) {
+    // 创建类型安全的键
+    TypedHandleKey typed_key{key, std::type_index(typeid(StorageType))};
+
+    // 查找现有handle
+    if (auto it = typed_handles_.find(typed_key); it != typed_handles_.end()) {
       // 更新最后使用时间
       it->second.last_used = std::chrono::steady_clock::now();
 
-      // 尝试将存储的 handle 转换为请求的类型
-      try {
-        return std::any_cast<std::shared_ptr<StorageType>>(it->second.handle);
-      } catch (const std::bad_any_cast&) {
-        // 类型不匹配，返回 nullptr
-        return nullptr;
-      }
+      // 获取强类型的handle
+      auto* typed_handle = static_cast<TypedHandle<StorageType>*>(it->second.handle_wrapper.get());
+      return typed_handle->GetHandle();
     }
 
-    // 检查是否超过最大 handle 数量
-    if (handles_.size() >= max_handles_) {
+    // 检查是否超过最大handle数量
+    if (typed_handles_.size() >= max_handles_) {
       CleanupLeastRecentlyUsed();
     }
 
-    // 创建新的 handle
+    // 创建新的handle
     auto new_handle = creator_func();
     if (!new_handle) {
       return nullptr;
     }
 
-    // 存储新的 handle
+    // 存储新的handle（使用类型擦除）
     HandleInfo info;
-    info.handle = new_handle;
+    info.handle_wrapper = std::make_shared<TypedHandle<StorageType>>(new_handle);
     info.last_used = std::chrono::steady_clock::now();
-    handles_[key] = std::move(info);
+    typed_handles_[typed_key] = std::move(info);
 
     return new_handle;
   }
@@ -91,7 +132,7 @@ class SqliteHandleManager {
   ~SqliteHandleManager() = default;
   void CleanupLeastRecentlyUsed();
 
-  std::unordered_map<HandleKey, HandleInfo, HandleKeyHash> handles_;
+  std::unordered_map<TypedHandleKey, HandleInfo, TypedHandleKeyHash> typed_handles_;
   std::mutex mutex_;
   size_t max_handles_{10};
 };

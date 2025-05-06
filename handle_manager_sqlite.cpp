@@ -14,39 +14,52 @@ void SqliteHandleManager::SetMaxHandles(size_t max_handles) {
 
 void SqliteHandleManager::Release(const HandleKey& key) {
   std::lock_guard lock(mutex_);
-
-  auto it = handles_.find(key);
-  if (it != handles_.end()) {
-    it->second.last_used = std::chrono::steady_clock::now();
+  
+  // 遍历所有类型的handles，查找匹配key的条目
+  for (auto it = typed_handles_.begin(); it != typed_handles_.end(); ) {
+    if (it->first.key == key) {
+      it->second.last_used = std::chrono::steady_clock::now();
+      break;
+    } else {
+      ++it;
+    }
   }
 }
 
 void SqliteHandleManager::Close(const HandleKey& key) {
   std::lock_guard lock(mutex_);
-  handles_.erase(key);
+  
+  // 遍历所有类型的handles，删除匹配key的条目
+  for (auto it = typed_handles_.begin(); it != typed_handles_.end(); ) {
+    if (it->first.key == key) {
+      it = typed_handles_.erase(it);
+    } else {
+      ++it;
+    }
+  }
 }
 
 void SqliteHandleManager::CloseAll() {
   std::lock_guard lock(mutex_);
-  handles_.clear();
+  typed_handles_.clear();
 }
 
 void SqliteHandleManager::CleanupLeastRecentlyUsed() {
-  if (handles_.empty()) {
+  if (typed_handles_.empty()) {
     return;
   }
 
-  // 查找最久未使用的 handle
-  auto oldest_it = handles_.begin();
-  for (auto it = handles_.begin(); it != handles_.end(); ++it) {
+  // 查找最久未使用的handle
+  auto oldest_it = typed_handles_.begin();
+  for (auto it = typed_handles_.begin(); it != typed_handles_.end(); ++it) {
     if (it->second.last_used < oldest_it->second.last_used) {
       oldest_it = it;
     }
   }
 
-  // 移除最久未使用的 handle
-  if (oldest_it != handles_.end()) {
-    handles_.erase(oldest_it);
+  // 移除最久未使用的handle
+  if (oldest_it != typed_handles_.end()) {
+    typed_handles_.erase(oldest_it);
   }
 }
 
