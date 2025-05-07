@@ -2,8 +2,9 @@
 
 #include <memory>
 #include <string>
-#include <sqlite_orm/sqlite_orm.h>
+
 #include "handle_manager_sqlite.h"
+#include "sqlite_orm/sqlite_orm.h"
 #include "user.h"  // 引入数据库文件名常量
 
 namespace mx::dba::dbs {
@@ -21,13 +22,11 @@ struct Order {
 // 创建订单表结构的工厂函数
 inline auto CreateOrderTable() {
   using namespace sqlite_orm;
-  return make_table(
-      "Orders", make_column("order_id", &Order::order_id, primary_key()),
-      make_column("user_id", &Order::user_id),
-      make_column("product_name", &Order::product_name),
-      make_column("quantity", &Order::quantity),
-      make_column("price", &Order::price),
-      make_column("order_date", &Order::order_date));
+  return make_table("Orders", make_column("order_id", &Order::order_id, primary_key()),
+                    make_column("user_id", &Order::user_id),
+                    make_column("product_name", &Order::product_name),
+                    make_column("quantity", &Order::quantity), make_column("price", &Order::price),
+                    make_column("order_date", &Order::order_date));
 }
 
 // 创建订单存储的工厂函数

@@ -2,8 +2,9 @@
 
 #include <memory>
 #include <string>
-#include <sqlite_orm/sqlite_orm.h>
+
 #include "handle_manager_sqlite.h"
+#include "sqlite_orm/sqlite_orm.h"
 
 namespace mx::dba::dbs {
 
@@ -22,12 +23,10 @@ struct User {
 // 创建用户表结构的工厂函数
 inline auto CreateUserTable() {
   using namespace sqlite_orm;
-  return make_table(
-      "Users", make_column("user_id", &User::user_id, primary_key()),
-      make_column("username", &User::username),
-      make_column("email", &User::email), 
-      make_column("age", &User::age),
-      make_column("registration_date", &User::registration_date));
+  return make_table("Users", make_column("user_id", &User::user_id, primary_key()),
+                    make_column("username", &User::username), make_column("email", &User::email),
+                    make_column("age", &User::age),
+                    make_column("registration_date", &User::registration_date));
 }
 
 // 创建用户存储的工厂函数

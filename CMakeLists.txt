@@ -126,6 +126,9 @@ target_link_libraries(generate_db PRIVATE MxDBANdsSqlite)
 add_executable(read_db ${CMAKE_CURRENT_SOURCE_DIR}/read_db.cpp)
 target_link_libraries(read_db PRIVATE MxDBANdsSqlite)
 
+add_executable(read_db2 ${CMAKE_CURRENT_SOURCE_DIR}/read_db2.cpp)
+target_link_libraries(read_db2 PRIVATE MxDBANdsSqlite sqlite_orm)
+
 add_executable(orm_test ${CMAKE_CURRENT_SOURCE_DIR}/orm_test.cpp)
 target_link_libraries(orm_test PRIVATE MxDBANdsSqlite sqlite_orm)
 
