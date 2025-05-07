@@ -26,7 +26,6 @@ using sqlite_orm::where;
 
 namespace mx::dba::dbs {
 
-// 数据库文件名常量
 static constexpr const char* kADBFileName = "A.db";
 static constexpr const char* kBDBFileName = "B.db";
 
@@ -49,13 +48,140 @@ struct HandleKeyHash {
   }
 };
 
-// 通用存储接口类，所有具体存储类型都应该从这个接口继承
+using TypedKey = std::pair<HandleKey, std::type_index>;
+
+struct TypedKeyHash {
+  std::size_t operator()(const TypedKey& key) const {
+    HandleKeyHash handle_hasher;
+    return handle_hasher(key.first) ^ std::hash<std::type_index>()(key.second);
+  }
+};
+
+struct TypedKeyEqual {
+  bool operator()(const TypedKey& lhs, const TypedKey& rhs) const {
+    return lhs.first == rhs.first && lhs.second == rhs.second;
+  }
+};
+
 class IStorage {
  public:
   virtual ~IStorage() = default;
 
-  // 获取数据库文件路径
   [[nodiscard]] virtual std::string GetDatabasePath() const = 0;
+};
+
+class StorageContainer {
+ public:
+  using CreatorFunc = std::function<std::shared_ptr<IStorage>()>;
+
+  static StorageContainer& Instance() {
+    static StorageContainer instance;
+    return instance;
+  }
+
+  StorageContainer(const StorageContainer&) = delete;
+  StorageContainer& operator=(const StorageContainer&) = delete;
+  StorageContainer(StorageContainer&&) noexcept = delete;
+  StorageContainer& operator=(StorageContainer&&) noexcept = delete;
+
+  template <typename T>
+  void RegisterStorageCreator(const HandleKey& key, std::function<std::shared_ptr<T>()> creator) {
+    static_assert(std::is_base_of_v<IStorage, T>, "T must inherit from IStorage");
+    std::lock_guard lock(mutex_);
+
+    TypedKey typed_key{key, std::type_index(typeid(T))};
+    auto wrapped_creator = [creator_func = std::move(creator)]() -> std::shared_ptr<IStorage> {
+      return creator_func();
+    };
+
+    creators_[typed_key] = std::move(wrapped_creator);
+  }
+
+  template <typename T>
+  std::shared_ptr<T> GetStorage(const HandleKey& key) {
+    static_assert(std::is_base_of_v<IStorage, T>, "T must inherit from IStorage");
+    std::lock_guard lock(mutex_);
+
+    TypedKey typed_key{key, std::type_index(typeid(T))};
+    if (auto it = storages_.find(typed_key); it != storages_.end()) {
+      return std::static_pointer_cast<T>(it->second);
+    }
+
+    auto creator_it = creators_.find(typed_key);
+    if (creator_it == creators_.end()) {
+      return nullptr;
+    }
+
+    auto storage = creator_it->second();
+    if (!storage) {
+      return nullptr;
+    }
+
+    std::string db_path = storage->GetDatabasePath();
+    std::shared_ptr<IStorage> shared_storage;
+    if (auto conn_it = db_connections_.find(db_path); conn_it != db_connections_.end()) {
+      shared_storage = conn_it->second;
+    } else {
+      shared_storage = storage;
+      db_connections_[db_path] = shared_storage;
+    }
+
+    storages_[typed_key] = shared_storage;
+    key_to_path_[key] = db_path;
+    return std::static_pointer_cast<T>(shared_storage);
+  }
+
+  template <typename T>
+  void RemoveStorage(const HandleKey& key) {
+    static_assert(std::is_base_of_v<IStorage, T>, "T must inherit from IStorage");
+    std::lock_guard lock(mutex_);
+
+    TypedKey typed_key{key, std::type_index(typeid(T))};
+    auto it = storages_.find(typed_key);
+    if (it == storages_.end()) {
+      return;
+    }
+
+    std::string db_path = it->second->GetDatabasePath();
+    storages_.erase(it);
+    bool has_other_users = false;
+    for (const auto& [typed_key_iter, storage_iter] : storages_) {
+      if (storage_iter->GetDatabasePath() == db_path) {
+        has_other_users = true;
+        break;
+      }
+    }
+
+    if (!has_other_users) {
+      db_connections_.erase(db_path);
+      key_to_path_.erase(key);
+    }
+  }
+
+  void Clear() {
+    std::lock_guard lock(mutex_);
+    storages_.clear();
+    creators_.clear();
+    db_connections_.clear();
+    key_to_path_.clear();
+  }
+
+  std::string GetDatabasePath(const HandleKey& key) const {
+    std::lock_guard lock(mutex_);
+    if (auto it = key_to_path_.find(key); it != key_to_path_.end()) {
+      return it->second;
+    }
+    return "";
+  }
+
+ private:
+  StorageContainer() = default;
+  ~StorageContainer() = default;
+  std::unordered_map<TypedKey, std::shared_ptr<IStorage>, TypedKeyHash, TypedKeyEqual> storages_{};
+  std::unordered_map<TypedKey, CreatorFunc, TypedKeyHash, TypedKeyEqual> creators_{};
+  std::unordered_map<std::string, std::shared_ptr<IStorage>> db_connections_{};
+  std::unordered_map<HandleKey, std::string, HandleKeyHash> key_to_path_{};
+  mutable std::mutex mutex_{};
 };
 
 // *********************************************************************************************************
@@ -162,6 +288,17 @@ class AStorage : public IStorage {
   std::string db_path_;
   ADBStorage storage_;
 };
+
+std::shared_ptr<AStorage> CreateAStorage() { return std::make_shared<AStorage>(kADBFileName); }
+
+HandleKey CreateADBKey() {
+  HandleKey key;
+  key.param1 = 1;  // 数据库类型：A
+  key.param2 = 0;  // 保留位
+  key.param3 = 0;  // 保留位
+  key.param4 = 0;  // 保留位
+  return key;
+}
 
 // *********************************************************************************************************
 // *********************************************************************************************************
@@ -272,226 +409,22 @@ class BStorage : public IStorage {
   BDBStorage storage_;
 };
 
-// *********************************************************************************************************
-// *********************************************************************************************************
-// *********************************************************************************************************
+std::shared_ptr<BStorage> CreateBStorage() { return std::make_shared<BStorage>(kBDBFileName); }
 
-// 存储管理器，实现无类型转换的存储管理
-class StorageContainer {
- private:
-  // 私有构造函数和析构函数
-  StorageContainer() = default;
-  ~StorageContainer() = default;
-  // 存储类型映射类，用于管理特定类型的存储实例
-  template <typename T>
-  class TypeMap {
-   public:
-    // 创建函数类型
-    using CreatorFunc = std::function<std::shared_ptr<T>()>;
-
-    // 注册创建函数
-    void RegisterCreator(const mx::dba::dbs::HandleKey& key, CreatorFunc creator) {
-      creators_[key] = std::move(creator);
-    }
-
-    // 获取存储实例
-    std::shared_ptr<T> GetStorage(const mx::dba::dbs::HandleKey& key,
-                                  const std::function<void(std::string_view)>& path_updater) {
-      // 先检查缓存中是否已存在
-      if (auto it = storages_.find(key); it != storages_.end()) {
-        return it->second;
-      }
-
-      // 如果不存在，检查是否有创建函数
-      auto creator_it = creators_.find(key);
-      if (creator_it == creators_.end()) {
-        return nullptr;  // 没有找到创建函数
-      }
-
-      // 使用创建函数创建存储实例
-      auto storage = creator_it->second();
-      if (!storage) {
-        return nullptr;  // 创建失败
-      }
-
-      // 存储到缓存中
-      storages_[key] = storage;
-
-      // 更新数据库路径
-      if (path_updater) {
-        path_updater(storage->GetDatabasePath());
-      }
-
-      return storage;
-    }
-
-    // 移除存储实例
-    void RemoveStorage(const mx::dba::dbs::HandleKey& key) { storages_.erase(key); }
-
-    // 清空所有存储实例
-    void Clear() {
-      storages_.clear();
-      creators_.clear();
-    }
-
-    // 检查是否有存储实例使用指定的键
-    [[nodiscard]] bool HasStorage(const mx::dba::dbs::HandleKey& key) const {
-      return storages_.find(key) != storages_.end();
-    }
-
-   private:
-    // 存储实例映射
-    std::unordered_map<mx::dba::dbs::HandleKey, std::shared_ptr<T>, mx::dba::dbs::HandleKeyHash>
-        storages_{};
-
-    // 创建函数映射
-    std::unordered_map<mx::dba::dbs::HandleKey, CreatorFunc, mx::dba::dbs::HandleKeyHash> creators_{};
-  };
-
-  // 为每种类型创建一个存储映射实例
-  TypeMap<mx::dba::dbs::AStorage> a_storage_map_{};
-  TypeMap<mx::dba::dbs::BStorage> b_storage_map_{};
-
-  // 数据库路径映射
-  std::unordered_map<mx::dba::dbs::HandleKey, std::string, mx::dba::dbs::HandleKeyHash> db_paths_{};
-
-  // 互斥锁
-  mutable std::mutex mutex_{};
-
- public:
-  static StorageContainer& Instance() {
-    static StorageContainer instance;
-    return instance;
-  }
-
-  StorageContainer(const StorageContainer&) = delete;
-  StorageContainer& operator=(const StorageContainer&) = delete;
-  StorageContainer(StorageContainer&&) noexcept = delete;
-  StorageContainer& operator=(StorageContainer&&) noexcept = delete;
-
-  // 通用存储注册函数
-  template <typename T>
-  void RegisterStorageCreator(const mx::dba::dbs::HandleKey& key,
-                            std::function<std::shared_ptr<T>()> creator) {
-    std::lock_guard lock(mutex_);
-    if constexpr (std::is_same_v<T, mx::dba::dbs::AStorage>) {
-      a_storage_map_.RegisterCreator(key, std::move(creator));
-    } else if constexpr (std::is_same_v<T, mx::dba::dbs::BStorage>) {
-      b_storage_map_.RegisterCreator(key, std::move(creator));
-    }
-  }
-
-  // 通用存储获取函数
-  template <typename T>
-  std::shared_ptr<T> GetStorage(const mx::dba::dbs::HandleKey& key) {
-    std::lock_guard lock(mutex_);
-
-    // 创建数据库路径更新器
-    auto path_updater = [this, key](std::string_view path) { db_paths_[key] = std::string(path); };
-    
-    if constexpr (std::is_same_v<T, mx::dba::dbs::AStorage>) {
-      return a_storage_map_.GetStorage(key, path_updater);
-    } else if constexpr (std::is_same_v<T, mx::dba::dbs::BStorage>) {
-      return b_storage_map_.GetStorage(key, path_updater);
-    } else {
-      return nullptr;
-    }
-  }
-
-  // 通用存储移除函数
-  template <typename T>
-  void RemoveStorage(const mx::dba::dbs::HandleKey& key) {
-    std::lock_guard lock(mutex_);
-    
-    if constexpr (std::is_same_v<T, mx::dba::dbs::AStorage>) {
-      a_storage_map_.RemoveStorage(key);
-      // 检查是否还有其他存储实例使用这个数据库文件
-      if (!b_storage_map_.HasStorage(key)) {
-        db_paths_.erase(key);
-      }
-    } else if constexpr (std::is_same_v<T, mx::dba::dbs::BStorage>) {
-      b_storage_map_.RemoveStorage(key);
-      // 检查是否还有其他存储实例使用这个数据库文件
-      if (!a_storage_map_.HasStorage(key)) {
-        db_paths_.erase(key);
-      }
-    }
-  }
-
-  // 清空所有存储实例
-  void Clear() {
-    std::lock_guard lock(mutex_);
-    a_storage_map_.Clear();
-    b_storage_map_.Clear();
-    db_paths_.clear();
-  }
-
-  // 获取数据库路径
-  std::string GetDatabasePath(const mx::dba::dbs::HandleKey& key) const {
-    std::lock_guard lock(mutex_);
-    if (auto it = db_paths_.find(key); it != db_paths_.end()) {
-      return it->second;
-    }
-    return "";
-  }
-
- private:
-  // 私有构造函数和析构函数已在类声明中定义
-
-  // 定义带类型信息的键类型，用于内部实现
-  using TypedKey = std::pair<mx::dba::dbs::HandleKey, std::type_index>;
-
-  // 定义带类型信息的键的哈希函数
-  struct TypedKeyHash {
-    std::size_t operator()(const TypedKey& key) const {
-      mx::dba::dbs::HandleKeyHash handle_hasher;
-      return handle_hasher(key.first) ^ std::hash<std::type_index>()(key.second);
-    }
-  };
-
-  // 定义带类型信息的键的相等函数
-  struct TypedKeyEqual {
-    bool operator()(const TypedKey& lhs, const TypedKey& rhs) const {
-      return lhs.first == rhs.first && lhs.second == rhs.second;
-    }
-  };
-};
-
-std::vector<User> GetUsersByCondition(ADBStorage& storage, const std::string_view& username_pattern,
-                                      int min_age) {
-  return storage.get_all<User>(
-      where(like(&User::username, username_pattern) && greater_than(&User::age, min_age)));
-}
-
-std::vector<Order> GetAllOrders(ADBStorage& storage) { return storage.get_all<Order>(); }
-
-std::vector<Order> GetOrdersByCondition(ADBStorage& storage, int user_id, double min_price) {
-  return storage.get_all<Order>(
-      where(is_equal(&Order::user_id, user_id) && greater_than(&Order::price, min_price)));
-}
-
-std::vector<UserOrder> GetUserOrders(ADBStorage& storage) {
-  auto rows =
-      storage.select(columns(&User::user_id, &User::username, &User::email, &User::age,
-                             &User::registration_date, &Order::order_id, &Order::user_id,
-                             &Order::product_name, &Order::quantity, &Order::price, &Order::order_date),
-                     inner_join<Order>(on(c(&User::user_id) == &Order::user_id)));
-
-  std::vector<UserOrder> result;
-  result.reserve(rows.size());
-
-  for (const auto& row : rows) {
-    const auto& [user_id, username, email, age, registration_date, order_id, order_user_id, product_name,
-                 quantity, price, order_date] = row;
-    User user{user_id, username, email, age, registration_date};
-    Order order{order_id, order_user_id, product_name, quantity, price, order_date};
-    result.push_back({user, order});
-  }
-
-  return result;
+HandleKey CreateBDBKey() {
+  HandleKey key;
+  key.param1 = 2;  // 数据库类型：B
+  key.param2 = 0;  // 保留位
+  key.param3 = 0;  // 保留位
+  key.param4 = 0;  // 保留位
+  return key;
 }
 
 }  // namespace mx::dba::dbs
+
+// *********************************************************************************************************
+// *********************************************************************************************************
+// *********************************************************************************************************
 
 // 打印用户信息的辅助函数
 void PrintUser(const mx::dba::dbs::User& user) {
@@ -519,47 +452,20 @@ void PrintWeather(const mx::dba::dbs::Weather& weather) {
             << ", 湿度: " << weather.humidity << ", 天气状况: " << weather.weather_condition << std::endl;
 }
 
-// 创建 A 数据库存储的函数
-std::shared_ptr<mx::dba::dbs::AStorage> CreateAStorage() {
-  return std::make_shared<mx::dba::dbs::AStorage>(mx::dba::dbs::kADBFileName);
-}
-
-// 创建 B 数据库存储的函数
-std::shared_ptr<mx::dba::dbs::BStorage> CreateBStorage() {
-  return std::make_shared<mx::dba::dbs::BStorage>(mx::dba::dbs::kBDBFileName);
-}
-
-// 创建用于 A 数据库的 HandleKey
-mx::dba::dbs::HandleKey CreateADBKey() {
-  // 创建一个唯一标识 A 数据库的 HandleKey
-  mx::dba::dbs::HandleKey key;
-  key.param1 = 1;  // 数据库类型：A
-  key.param2 = 0;  // 保留位
-  key.param3 = 0;  // 保留位
-  key.param4 = 0;  // 保留位
-  return key;
-}
-
-// 创建用于 B 数据库的 HandleKey
-mx::dba::dbs::HandleKey CreateBDBKey() {
-  // 创建一个唯一标识 B 数据库的 HandleKey
-  mx::dba::dbs::HandleKey key;
-  key.param1 = 2;  // 数据库类型：B
-  key.param2 = 0;  // 保留位
-  key.param3 = 0;  // 保留位
-  key.param4 = 0;  // 保留位
-  return key;
-}
+using mx::dba::dbs::CreateADBKey;
+using mx::dba::dbs::CreateAStorage;
+using mx::dba::dbs::CreateBDBKey;
+using mx::dba::dbs::CreateBStorage;
 
 int main() {
+  // 初始化存储容器
+  auto& container = mx::dba::dbs::StorageContainer::Instance();
+
+  // 注册创建函数
+  container.RegisterStorageCreator<mx::dba::dbs::AStorage>(CreateADBKey(), CreateAStorage);
+  container.RegisterStorageCreator<mx::dba::dbs::BStorage>(CreateBDBKey(), CreateBStorage);
+
   try {
-    // 初始化存储容器
-    auto& container = mx::dba::dbs::StorageContainer::Instance();
-
-    // 注册创建函数
-    container.RegisterStorageCreator<mx::dba::dbs::AStorage>(CreateADBKey(), CreateAStorage);
-    container.RegisterStorageCreator<mx::dba::dbs::BStorage>(CreateBDBKey(), CreateBStorage);
-
     // 使用 A 数据库存储
     std::cout << "\n===== 使用 A 数据库 =====\n" << std::endl;
     auto a_storage = container.GetStorage<mx::dba::dbs::AStorage>(CreateADBKey());
