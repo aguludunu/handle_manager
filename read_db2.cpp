@@ -4,7 +4,6 @@
 #include <mutex>
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <typeindex>
 #include <unordered_map>
 #include <utility>
@@ -27,6 +26,10 @@ using sqlite_orm::where;
 
 namespace mx::dba::dbs {
 
+// 数据库文件名常量
+static constexpr const char* kADBFileName = "A.db";
+static constexpr const char* kBDBFileName = "B.db";
+
 struct HandleKey {
   int param1{0};
   int param2{0};
@@ -45,6 +48,19 @@ struct HandleKeyHash {
            (std::hash<int>()(key.param3) << 2) ^ (std::hash<int>()(key.param4) << 3);
   }
 };
+
+// 通用存储接口类，所有具体存储类型都应该从这个接口继承
+class IStorage {
+ public:
+  virtual ~IStorage() = default;
+
+  // 获取数据库文件路径
+  [[nodiscard]] virtual std::string GetDatabasePath() const = 0;
+};
+
+// *********************************************************************************************************
+// *********************************************************************************************************
+// *********************************************************************************************************
 
 struct User {
   int user_id{0};
@@ -68,10 +84,6 @@ struct UserOrder {
   Order order;
 };
 
-// 数据库文件名常量
-static constexpr const char* kADBFileName = "A.db";
-static constexpr const char* kBDBFileName = "B.db";
-
 inline auto CreateUserTable() {
   return make_table("Users", make_column("user_id", &User::user_id, primary_key()),
                     make_column("username", &User::username), make_column("email", &User::email),
@@ -86,15 +98,6 @@ inline auto CreateOrderTable() {
                     make_column("quantity", &Order::quantity), make_column("price", &Order::price),
                     make_column("order_date", &Order::order_date));
 }
-
-// 通用存储接口类，所有具体存储类型都应该从这个接口继承
-class IStorage {
- public:
-  virtual ~IStorage() = default;
-
-  // 获取数据库文件路径
-  [[nodiscard]] virtual std::string GetDatabasePath() const = 0;
-};
 
 // 创建 A 数据库存储的工厂函数
 inline auto CreateADBStorage(const std::string_view& db_path) {
@@ -159,6 +162,10 @@ class AStorage : public IStorage {
   std::string db_path_;
   ADBStorage storage_;
 };
+
+// *********************************************************************************************************
+// *********************************************************************************************************
+// *********************************************************************************************************
 
 // 城市结构体定义
 struct City {
@@ -265,13 +272,93 @@ class BStorage : public IStorage {
   BDBStorage storage_;
 };
 
-// 存储容器类，管理不同类型的存储实例
-class StorageContainer {
- public:
-  // 定义类型安全的创建存储实例的函数类型
-  template <typename T>
-  using TypedCreatorFunc = std::function<std::shared_ptr<T>()>;
+// *********************************************************************************************************
+// *********************************************************************************************************
+// *********************************************************************************************************
 
+// 存储管理器，实现无类型转换的存储管理
+class StorageContainer {
+ private:
+  // 私有构造函数和析构函数
+  StorageContainer() = default;
+  ~StorageContainer() = default;
+  // 存储类型映射类，用于管理特定类型的存储实例
+  template <typename T>
+  class TypeMap {
+   public:
+    // 创建函数类型
+    using CreatorFunc = std::function<std::shared_ptr<T>()>;
+
+    // 注册创建函数
+    void RegisterCreator(const mx::dba::dbs::HandleKey& key, CreatorFunc creator) {
+      creators_[key] = std::move(creator);
+    }
+
+    // 获取存储实例
+    std::shared_ptr<T> GetStorage(const mx::dba::dbs::HandleKey& key,
+                                  const std::function<void(std::string_view)>& path_updater) {
+      // 先检查缓存中是否已存在
+      if (auto it = storages_.find(key); it != storages_.end()) {
+        return it->second;
+      }
+
+      // 如果不存在，检查是否有创建函数
+      auto creator_it = creators_.find(key);
+      if (creator_it == creators_.end()) {
+        return nullptr;  // 没有找到创建函数
+      }
+
+      // 使用创建函数创建存储实例
+      auto storage = creator_it->second();
+      if (!storage) {
+        return nullptr;  // 创建失败
+      }
+
+      // 存储到缓存中
+      storages_[key] = storage;
+
+      // 更新数据库路径
+      if (path_updater) {
+        path_updater(storage->GetDatabasePath());
+      }
+
+      return storage;
+    }
+
+    // 移除存储实例
+    void RemoveStorage(const mx::dba::dbs::HandleKey& key) { storages_.erase(key); }
+
+    // 清空所有存储实例
+    void Clear() {
+      storages_.clear();
+      creators_.clear();
+    }
+
+    // 检查是否有存储实例使用指定的键
+    [[nodiscard]] bool HasStorage(const mx::dba::dbs::HandleKey& key) const {
+      return storages_.find(key) != storages_.end();
+    }
+
+   private:
+    // 存储实例映射
+    std::unordered_map<mx::dba::dbs::HandleKey, std::shared_ptr<T>, mx::dba::dbs::HandleKeyHash>
+        storages_{};
+
+    // 创建函数映射
+    std::unordered_map<mx::dba::dbs::HandleKey, CreatorFunc, mx::dba::dbs::HandleKeyHash> creators_{};
+  };
+
+  // 为每种类型创建一个存储映射实例
+  TypeMap<mx::dba::dbs::AStorage> a_storage_map_{};
+  TypeMap<mx::dba::dbs::BStorage> b_storage_map_{};
+
+  // 数据库路径映射
+  std::unordered_map<mx::dba::dbs::HandleKey, std::string, mx::dba::dbs::HandleKeyHash> db_paths_{};
+
+  // 互斥锁
+  mutable std::mutex mutex_{};
+
+ public:
   static StorageContainer& Instance() {
     static StorageContainer instance;
     return instance;
@@ -282,98 +369,76 @@ class StorageContainer {
   StorageContainer(StorageContainer&&) noexcept = delete;
   StorageContainer& operator=(StorageContainer&&) noexcept = delete;
 
-  // 注册创建存储实例的函数，类型安全版本
+  // 通用存储注册函数
   template <typename T>
-  void RegisterCreator(const mx::dba::dbs::HandleKey& key, TypedCreatorFunc<T> creator) {
+  void RegisterStorageCreator(const mx::dba::dbs::HandleKey& key,
+                            std::function<std::shared_ptr<T>()> creator) {
     std::lock_guard lock(mutex_);
-    // 将类型信息编码到键中
-    auto typed_key = std::make_pair(key, std::type_index(typeid(T)));
-    // 将类型特定的创建函数存储到类型操作映射中
-    auto type_erased_creator = [creator_func = std::move(creator)]() -> std::shared_ptr<IStorage> {
-      return creator_func();
-    };
-    typed_creators_[typed_key] = std::move(type_erased_creator);
+    if constexpr (std::is_same_v<T, mx::dba::dbs::AStorage>) {
+      a_storage_map_.RegisterCreator(key, std::move(creator));
+    } else if constexpr (std::is_same_v<T, mx::dba::dbs::BStorage>) {
+      b_storage_map_.RegisterCreator(key, std::move(creator));
+    }
   }
 
-  // 获取存储实例，如果不存在则创建，类型安全版本
+  // 通用存储获取函数
   template <typename T>
   std::shared_ptr<T> GetStorage(const mx::dba::dbs::HandleKey& key) {
     std::lock_guard lock(mutex_);
 
-    // 创建带类型信息的键
-    auto typed_key = std::make_pair(key, std::type_index(typeid(T)));
-
-    // 先检查缓存中是否已存在
-    if (auto it = typed_storages_.find(typed_key); it != typed_storages_.end()) {
-      // 这里的转换是安全的，因为我们在添加时已经确保了类型匹配
-      return std::static_pointer_cast<T>(it->second);
+    // 创建数据库路径更新器
+    auto path_updater = [this, key](std::string_view path) { db_paths_[key] = std::string(path); };
+    
+    if constexpr (std::is_same_v<T, mx::dba::dbs::AStorage>) {
+      return a_storage_map_.GetStorage(key, path_updater);
+    } else if constexpr (std::is_same_v<T, mx::dba::dbs::BStorage>) {
+      return b_storage_map_.GetStorage(key, path_updater);
+    } else {
+      return nullptr;
     }
-
-    // 如果不存在，检查是否有创建函数
-    auto creator_it = typed_creators_.find(typed_key);
-    if (creator_it == typed_creators_.end()) {
-      return nullptr;  // 没有找到创建函数
-    }
-
-    // 使用创建函数创建存储实例
-    auto storage = creator_it->second();
-    if (!storage) {
-      return nullptr;  // 创建失败
-    }
-
-    // 存储到缓存中
-    typed_storages_[typed_key] = storage;
-
-    // 同时将数据库路径保存到数据库文件级别的缓存中
-    // 这样可以确保同一个数据库文件只有一个连接
-    db_connections_[key] = storage->GetDatabasePath();
-
-    // 这里的转换是安全的，因为我们在注册时已经确保了类型匹配
-    return std::static_pointer_cast<T>(storage);
   }
 
-  // 归还存储实例，实际上什么也不做，因为存储实例是共享的
-  template <typename T>
-  void ReleaseStorage(const std::shared_ptr<T>& /* storage */) const {
-    // 什么也不做，因为存储实例是共享的
-    // 智能指针会自动管理引用计数
-  }
-
-  // 移除存储实例
+  // 通用存储移除函数
   template <typename T>
   void RemoveStorage(const mx::dba::dbs::HandleKey& key) {
     std::lock_guard lock(mutex_);
-    auto typed_key = std::make_pair(key, std::type_index(typeid(T)));
-    typed_storages_.erase(typed_key);
-
-    // 检查是否还有其他存储实例使用这个数据库文件
-    bool has_other_storages = false;
-    for (const auto& [storage_key, storage_val] : typed_storages_) {
-      if (storage_key.first == key) {
-        has_other_storages = true;
-        break;
+    
+    if constexpr (std::is_same_v<T, mx::dba::dbs::AStorage>) {
+      a_storage_map_.RemoveStorage(key);
+      // 检查是否还有其他存储实例使用这个数据库文件
+      if (!b_storage_map_.HasStorage(key)) {
+        db_paths_.erase(key);
       }
-    }
-
-    // 如果没有其他存储实例使用这个数据库文件，则删除连接记录
-    if (!has_other_storages) {
-      db_connections_.erase(key);
+    } else if constexpr (std::is_same_v<T, mx::dba::dbs::BStorage>) {
+      b_storage_map_.RemoveStorage(key);
+      // 检查是否还有其他存储实例使用这个数据库文件
+      if (!a_storage_map_.HasStorage(key)) {
+        db_paths_.erase(key);
+      }
     }
   }
 
   // 清空所有存储实例
   void Clear() {
     std::lock_guard lock(mutex_);
-    typed_storages_.clear();
-    typed_creators_.clear();
-    db_connections_.clear();
+    a_storage_map_.Clear();
+    b_storage_map_.Clear();
+    db_paths_.clear();
+  }
+
+  // 获取数据库路径
+  std::string GetDatabasePath(const mx::dba::dbs::HandleKey& key) const {
+    std::lock_guard lock(mutex_);
+    if (auto it = db_paths_.find(key); it != db_paths_.end()) {
+      return it->second;
+    }
+    return "";
   }
 
  private:
-  StorageContainer() = default;
-  ~StorageContainer() = default;
+  // 私有构造函数和析构函数已在类声明中定义
 
-  // 定义带类型信息的键类型
+  // 定义带类型信息的键类型，用于内部实现
   using TypedKey = std::pair<mx::dba::dbs::HandleKey, std::type_index>;
 
   // 定义带类型信息的键的哈希函数
@@ -390,23 +455,7 @@ class StorageContainer {
       return lhs.first == rhs.first && lhs.second == rhs.second;
     }
   };
-
-  // 存储实例缓存，按类型存储
-  std::unordered_map<TypedKey, std::shared_ptr<IStorage>, TypedKeyHash, TypedKeyEqual> typed_storages_{};
-
-  // 创建函数映射，按类型存储
-  std::unordered_map<TypedKey, std::function<std::shared_ptr<IStorage>()>, TypedKeyHash, TypedKeyEqual>
-      typed_creators_{};
-
-  // 数据库文件连接记录，用于跟踪每个数据库文件的连接
-  std::unordered_map<mx::dba::dbs::HandleKey, std::string, mx::dba::dbs::HandleKeyHash> db_connections_{};
-
-  // 互斥锁，保护对容器的并发访问
-  std::mutex mutex_;
 };
-
-// 以下是为了向后兼容保留的旧接口函数
-std::vector<User> GetAllUsers(ADBStorage& storage) { return storage.get_all<User>(); }
 
 std::vector<User> GetUsersByCondition(ADBStorage& storage, const std::string_view& username_pattern,
                                       int min_age) {
@@ -508,108 +557,113 @@ int main() {
     auto& container = mx::dba::dbs::StorageContainer::Instance();
 
     // 注册创建函数
-    container.RegisterCreator<mx::dba::dbs::AStorage>(CreateADBKey(), CreateAStorage);
-    container.RegisterCreator<mx::dba::dbs::BStorage>(CreateBDBKey(), CreateBStorage);
+    container.RegisterStorageCreator<mx::dba::dbs::AStorage>(CreateADBKey(), CreateAStorage);
+    container.RegisterStorageCreator<mx::dba::dbs::BStorage>(CreateBDBKey(), CreateBStorage);
 
     // 使用 A 数据库存储
     std::cout << "\n===== 使用 A 数据库 =====\n" << std::endl;
-    auto a_db = container.GetStorage<mx::dba::dbs::AStorage>(CreateADBKey());
-    if (a_db) {
-      // 1. 读取 user 表的全部数据
-      std::cout << "===== 所有用户 =====" << std::endl;
-      auto all_users = a_db->GetAll<mx::dba::dbs::User>();
-      for (const auto& user : all_users) {
-        PrintUser(user);
-      }
-      std::cout << std::endl;
-
-      // 2. 根据条件读取 user 表的部分数据
-      std::cout << "===== 年龄大于 30 且用户名包含 '李' 的用户 =====" << std::endl;
-      auto filtered_users = a_db->GetUsersByCondition("%李%", 30);
-      for (const auto& user : filtered_users) {
-        PrintUser(user);
-      }
-      std::cout << std::endl;
-
-      // 3. 读取 order 表的全部数据
-      std::cout << "===== 所有订单 =====" << std::endl;
-      auto all_orders = a_db->GetAll<mx::dba::dbs::Order>();
-      for (const auto& order : all_orders) {
-        PrintOrder(order);
-      }
-      std::cout << std::endl;
-
-      // 4. 根据条件读取 order 表的部分数据
-      std::cout << "===== 用户ID为 1 且价格大于 1000 的订单 =====" << std::endl;
-      auto filtered_orders = a_db->GetOrdersByCondition(1, 1000.0);
-      for (const auto& order : filtered_orders) {
-        PrintOrder(order);
-      }
-      std::cout << std::endl;
-
-      // 5. 读取 user 表和 order 表的关联数据
-      std::cout << "===== 用户和订单关联数据 =====" << std::endl;
-      auto user_orders = a_db->GetUserOrders();
-      for (const auto& user_order : user_orders) {
-        std::cout << "用户: " << user_order.user.username << " (ID: " << user_order.user.user_id << ")"
-                  << " 订购了: " << user_order.order.product_name << " 价格: " << user_order.order.price
-                  << std::endl;
-      }
-      std::cout << std::endl;
+    auto a_storage = container.GetStorage<mx::dba::dbs::AStorage>(CreateADBKey());
+    if (!a_storage) {
+      std::cerr << "Failed to get A storage" << std::endl;
+      return 1;
     }
 
-    // 归还 A 数据库存储
-    container.ReleaseStorage(a_db);
+    // 1. 读取 user 表的全部数据
+    std::cout << "===== 所有用户 =====" << std::endl;
+    auto all_users = a_storage->GetAll<mx::dba::dbs::User>();
+    for (const auto& user : all_users) {
+      PrintUser(user);
+    }
+    std::cout << std::endl;
+
+    // 2. 根据条件读取 user 表的部分数据
+    std::cout << "===== 年龄大于 30 且用户名包含 '李' 的用户 =====" << std::endl;
+    auto filtered_users = a_storage->GetUsersByCondition("%李%", 30);
+    for (const auto& user : filtered_users) {
+      PrintUser(user);
+    }
+    std::cout << std::endl;
+
+    // 3. 读取 order 表的全部数据
+    std::cout << "===== 所有订单 =====" << std::endl;
+    auto all_orders = a_storage->GetAll<mx::dba::dbs::Order>();
+    for (const auto& order : all_orders) {
+      PrintOrder(order);
+    }
+    std::cout << std::endl;
+
+    // 4. 根据条件读取 order 表的部分数据
+    std::cout << "===== 用户ID为 1 且价格大于 1000 的订单 =====" << std::endl;
+    auto filtered_orders = a_storage->GetOrdersByCondition(1, 1000.0);
+    for (const auto& order : filtered_orders) {
+      PrintOrder(order);
+    }
+    std::cout << std::endl;
+
+    // 5. 读取 user 表和 order 表的关联数据
+    std::cout << "===== 用户和订单关联数据 =====" << std::endl;
+    auto user_orders = a_storage->GetUserOrders();
+    for (const auto& user_order : user_orders) {
+      std::cout << "用户: " << user_order.user.username << " (ID: " << user_order.user.user_id << ")"
+                << " 订购了: " << user_order.order.product_name << " 价格: " << user_order.order.price
+                << std::endl;
+    }
+    std::cout << std::endl;
+
+    // A 数据库存储使用完毕
+    // 不需要归还，智能指针会自动管理
 
     // 使用 B 数据库存储
     std::cout << "\n===== 使用 B 数据库 =====\n" << std::endl;
-    auto b_db = container.GetStorage<mx::dba::dbs::BStorage>(CreateBDBKey());
-    if (b_db) {
-      // 1. 读取 city 表的全部数据
-      std::cout << "===== 所有城市 =====" << std::endl;
-      auto all_cities = b_db->GetAll<mx::dba::dbs::City>();
-      for (const auto& city : all_cities) {
-        PrintCity(city);
-      }
-      std::cout << std::endl;
-
-      // 2. 根据条件读取 city 表的部分数据
-      std::cout << "===== 中国的人口大于 2000万的城市 =====" << std::endl;
-      auto filtered_cities = b_db->GetCitiesByCondition("中国", 20000000);
-      for (const auto& city : filtered_cities) {
-        PrintCity(city);
-      }
-      std::cout << std::endl;
-
-      // 3. 读取 weather 表的全部数据
-      std::cout << "===== 所有天气记录 =====" << std::endl;
-      auto all_weather = b_db->GetAll<mx::dba::dbs::Weather>();
-      for (const auto& weather : all_weather) {
-        PrintWeather(weather);
-      }
-      std::cout << std::endl;
-
-      // 4. 根据条件读取 weather 表的部分数据
-      std::cout << "===== 城市ID为 1 且温度大于 26 度的天气记录 =====" << std::endl;
-      auto filtered_weather = b_db->GetWeatherByCondition(1, 26.0);
-      for (const auto& weather : filtered_weather) {
-        PrintWeather(weather);
-      }
-      std::cout << std::endl;
-
-      // 5. 读取 city 表和 weather 表的关联数据
-      std::cout << "===== 城市和天气关联数据 =====" << std::endl;
-      auto city_weathers = b_db->GetCityWeathers();
-      for (const auto& city_weather : city_weathers) {
-        std::cout << "城市: " << city_weather.city.city_name << " (ID: " << city_weather.city.city_id << ")"
-                  << " 天气状况: " << city_weather.weather.weather_condition
-                  << " 温度: " << city_weather.weather.temperature << std::endl;
-      }
+    auto b_storage = container.GetStorage<mx::dba::dbs::BStorage>(CreateBDBKey());
+    if (!b_storage) {
+      std::cerr << "Failed to get B storage" << std::endl;
+      return 1;
     }
 
-    // 归还 B 数据库存储
-    container.ReleaseStorage(b_db);
+    // 1. 读取 city 表的全部数据
+    std::cout << "===== 所有城市 =====" << std::endl;
+    auto all_cities = b_storage->GetAll<mx::dba::dbs::City>();
+    for (const auto& city : all_cities) {
+      PrintCity(city);
+    }
+    std::cout << std::endl;
 
+    // 2. 根据条件读取 city 表的部分数据
+    std::cout << "===== 中国的人口大于 2000万的城市 =====" << std::endl;
+    auto filtered_cities = b_storage->GetCitiesByCondition("中国", 20000000);
+    for (const auto& city : filtered_cities) {
+      PrintCity(city);
+    }
+    std::cout << std::endl;
+
+    // 3. 读取 weather 表的全部数据
+    std::cout << "===== 所有天气记录 =====" << std::endl;
+    auto all_weather = b_storage->GetAll<mx::dba::dbs::Weather>();
+    for (const auto& weather : all_weather) {
+      PrintWeather(weather);
+    }
+    std::cout << std::endl;
+
+    // 4. 根据条件读取 weather 表的部分数据
+    std::cout << "===== 城市ID为 1 且温度大于 26 度的天气记录 =====" << std::endl;
+    auto filtered_weather = b_storage->GetWeatherByCondition(1, 26.0);
+    for (const auto& weather : filtered_weather) {
+      PrintWeather(weather);
+    }
+    std::cout << std::endl;
+
+    // 5. 读取 city 表和 weather 表的关联数据
+    std::cout << "===== 城市和天气关联数据 =====" << std::endl;
+    auto city_weathers = b_storage->GetCityWeathers();
+    for (const auto& city_weather : city_weathers) {
+      std::cout << "城市: " << city_weather.city.city_name << " (ID: " << city_weather.city.city_id << ")"
+                << " 天气状况: " << city_weather.weather.weather_condition
+                << " 温度: " << city_weather.weather.temperature << std::endl;
+    }
+    std::cout << std::endl;
+
+    std::cout << "\n===== 成功完成所有操作 =====\n" << std::endl;
   } catch (const std::exception& e) {
     std::cerr << "错误: " << e.what() << std::endl;
     return 1;
