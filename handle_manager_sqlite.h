@@ -30,7 +30,23 @@ struct HandleKeyHash {
   }
 };
 
-// 类型擦除接口
+struct TypedHandleKey {
+  HandleKey key;
+  std::type_index type_idx;
+
+  friend bool operator==(const TypedHandleKey& lhs, const TypedHandleKey& rhs) {
+    return lhs.key == rhs.key && lhs.type_idx == rhs.type_idx;
+  }
+};
+
+struct TypedHandleKeyHash {
+  std::size_t operator()(const TypedHandleKey& typed_key) const {
+    HandleKeyHash key_hasher;
+    return key_hasher(typed_key.key) ^ std::hash<std::type_index>()(typed_key.type_idx);
+  }
+};
+
+// 类型擦除的接口
 class HandleBase {
  public:
   virtual ~HandleBase() = default;
@@ -51,28 +67,9 @@ class TypedHandle : public HandleBase {
   std::shared_ptr<T> handle_;
 };
 
-// 替代HandleInfo，使用类型安全的设计
 struct HandleInfo {
   std::shared_ptr<HandleBase> handle_wrapper;
   std::chrono::steady_clock::time_point last_used;
-};
-
-// 组合键：HandleKey + 类型
-struct TypedHandleKey {
-  HandleKey key;
-  std::type_index type_idx;
-
-  friend bool operator==(const TypedHandleKey& lhs, const TypedHandleKey& rhs) {
-    return lhs.key == rhs.key && lhs.type_idx == rhs.type_idx;
-  }
-};
-
-// TypedHandleKey的哈希函数
-struct TypedHandleKeyHash {
-  std::size_t operator()(const TypedHandleKey& typed_key) const {
-    HandleKeyHash key_hasher;
-    return key_hasher(typed_key.key) ^ std::hash<std::type_index>()(typed_key.type_idx);
-  }
 };
 
 class SqliteHandleManager {
@@ -181,11 +178,7 @@ class DatabaseReader {
   }
 
  protected:
-  // 创建存储对象的虚函数，子类必须实现
   virtual std::shared_ptr<StorageType> CreateStorage() = 0;
-
-  // 获取 key 的 getter 方法
-  [[nodiscard]] const HandleKey& GetKey() const { return key_; }
 
  private:
   HandleKey key_;

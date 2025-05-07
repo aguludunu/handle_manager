@@ -1,85 +1,15 @@
-#include <sqlite_orm/sqlite_orm.h>
-
 #include <iostream>
-#include <memory>
-#include <string>
 
 #include "handle_manager_sqlite.h"
+#include "order.h"
+#include "user.h"
 
-using mx::dba::dbs::DatabaseReader;
 using mx::dba::dbs::HandleKey;
+using mx::dba::dbs::Order;
+using mx::dba::dbs::OrderReader;
 using mx::dba::dbs::SqliteHandleManager;
-
-// 定义 A.db 中的表结构
-struct User {
-  int user_id{0};
-  std::string username{};
-  std::string email{};
-  int age{0};
-  long registration_date{0};
-};
-
-struct Order {
-  int order_id{0};
-  int user_id{0};
-  std::string product_name{};
-  int quantity{0};
-  double price{0.0};
-  long order_date{0};
-};
-
-// 定义 User 表的存储类型
-using UserStorage = decltype(sqlite_orm::make_storage(
-    "A.db", sqlite_orm::make_table(
-                "Users", sqlite_orm::make_column("user_id", &User::user_id, sqlite_orm::primary_key()),
-                sqlite_orm::make_column("username", &User::username),
-                sqlite_orm::make_column("email", &User::email), sqlite_orm::make_column("age", &User::age),
-                sqlite_orm::make_column("registration_date", &User::registration_date))));
-
-// 用户表的读取器
-class UserReader : public DatabaseReader<UserStorage> {
- public:
-  using DatabaseReader<UserStorage>::DatabaseReader;
-
- protected:
-  std::shared_ptr<UserStorage> CreateStorage() override {
-    using namespace sqlite_orm;
-    auto storage = std::make_shared<UserStorage>(
-        make_storage("A.db", make_table("Users", make_column("user_id", &User::user_id, primary_key()),
-                                        make_column("username", &User::username),
-                                        make_column("email", &User::email), make_column("age", &User::age),
-                                        make_column("registration_date", &User::registration_date))));
-    return storage;
-  }
-};
-
-// 定义 Order 表的存储类型
-using OrderStorage = decltype(sqlite_orm::make_storage(
-    "A.db", sqlite_orm::make_table(
-                "Orders", sqlite_orm::make_column("order_id", &Order::order_id, sqlite_orm::primary_key()),
-                sqlite_orm::make_column("user_id", &Order::user_id),
-                sqlite_orm::make_column("product_name", &Order::product_name),
-                sqlite_orm::make_column("quantity", &Order::quantity),
-                sqlite_orm::make_column("price", &Order::price),
-                sqlite_orm::make_column("order_date", &Order::order_date))));
-
-// 订单表的读取器
-class OrderReader : public DatabaseReader<OrderStorage> {
- public:
-  using DatabaseReader<OrderStorage>::DatabaseReader;
-
- protected:
-  std::shared_ptr<OrderStorage> CreateStorage() override {
-    using namespace sqlite_orm;
-    auto storage = std::make_shared<OrderStorage>(make_storage(
-        "A.db", make_table("Orders", make_column("order_id", &Order::order_id, primary_key()),
-                           make_column("user_id", &Order::user_id),
-                           make_column("product_name", &Order::product_name),
-                           make_column("quantity", &Order::quantity), make_column("price", &Order::price),
-                           make_column("order_date", &Order::order_date))));
-    return storage;
-  }
-};
+using mx::dba::dbs::User;
+using mx::dba::dbs::UserReader;
 
 int main() {
   // 设置最大 handle 数量
