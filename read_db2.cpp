@@ -1,4 +1,5 @@
 #include <chrono>
+#include <cstdint>
 #include <functional>
 #include <iostream>
 #include <list>
@@ -29,6 +30,15 @@ using sqlite_orm::where;
 
 namespace mx::dba::dbs {
 
+class IStorage;
+struct HandleKey;
+struct StorageLRU;
+
+using StorageKey = std::pair<HandleKey, std::type_index>;
+using StorageId = uint64_t;
+using CreatorFunc = std::function<std::shared_ptr<IStorage>(const std::string_view&)>;
+using Storages = std::unordered_map<StorageId, std::list<StorageLRU>::iterator>;
+
 static constexpr const char* kADBFileName = "A.db";
 static constexpr const char* kBDBFileName = "B.db";
 static constexpr size_t kDefaultMaxStorageCount{100};
@@ -52,11 +62,6 @@ struct HandleKeyHash {
   }
 };
 
-// 存储对象的键类型，由 HandleKey 和类型索引组成
-using StorageKey = std::pair<HandleKey, std::type_index>;
-using StorageId = uint64_t;
-
-// StorageKey 的哈希函数
 struct StorageKeyHash {
   std::size_t operator()(const StorageKey& key) const {
     HandleKeyHash handle_hasher;
@@ -64,14 +69,13 @@ struct StorageKeyHash {
   }
 };
 
-// StorageKey 的比较函数
 struct StorageKeyEqual {
   bool operator()(const StorageKey& lhs, const StorageKey& rhs) const {
     return lhs.first == rhs.first && lhs.second == rhs.second;
   }
 };
 
-// 类型索引持有者，用于预计算类型索引
+// 不想每次都运算 std::type_index(typeid(T))，用 TypeIndexHolder 只计算一次
 template <typename T>
 struct TypeIndexHolder {
   static const std::type_index kValue;
@@ -80,6 +84,7 @@ struct TypeIndexHolder {
 template <typename T>
 const std::type_index TypeIndexHolder<T>::kValue = std::type_index(typeid(T));
 
+// 各种 Storage 的通用接口，好放在容器中统一管理
 class IStorage {
  public:
   virtual ~IStorage() = default;
@@ -87,7 +92,6 @@ class IStorage {
   [[nodiscard]] virtual std::string GetDatabasePath() const = 0;
 };
 
-// 根据HandleKey获取数据库路径
 static std::string GetDbPathFromKey(const HandleKey& key) {
   // 根据HandleKey的param1字段判断数据库类型
   switch (key.param1) {
@@ -100,17 +104,17 @@ static std::string GetDbPathFromKey(const HandleKey& key) {
   }
 }
 
-// 存储对象的LRU包装类，包含最后使用时间信息
+// Storage 的LRU包装类，包含LRU时间戳和ID
 struct StorageLRU {
-  HandleKey key{};
+  StorageId id{0};
+  HandleKey key;
   std::type_index type_idx{typeid(void)};
   std::shared_ptr<IStorage> storage{nullptr};
   std::chrono::steady_clock::time_point last_used_time{std::chrono::steady_clock::now()};
-  StorageId id{0};  // 存储对象的唯一ID
 
   StorageLRU() = default;
   StorageLRU(const HandleKey& k, const std::type_index& t, std::shared_ptr<IStorage> s, StorageId i)
-      : key(k), type_idx(t), storage(std::move(s)), id(i) {}
+      : id(i), key(k), type_idx(t), storage(std::move(s)) {}
   StorageLRU(StorageLRU&&) noexcept = default;
   StorageLRU& operator=(StorageLRU&&) noexcept = default;
   StorageLRU(const StorageLRU&) = delete;
@@ -120,8 +124,6 @@ struct StorageLRU {
 // 存储容器类，管理所有存储对象
 class StorageContainer {
  public:
-  using CreatorFunc = std::function<std::shared_ptr<IStorage>(const std::string_view&)>;
-
   static StorageContainer& Instance() {
     static StorageContainer instance;
     return instance;
@@ -142,77 +144,55 @@ class StorageContainer {
     return storage_list_.size();
   }
 
-  // 注册存储创建器
   template <typename T>
   void RegisterStorageCreator(std::function<std::shared_ptr<T>(const std::string_view&)> creator) {
     static_assert(std::is_base_of_v<IStorage, T>, "T must inherit from IStorage");
     std::lock_guard lock(mutex_);
 
+    // 将各种 T 转换为 std::shared_ptr<IStorage>，所以需要增加一个wrapper
     auto wrapped_creator =
         [creator_func = std::move(creator)](const std::string_view& db_path) -> std::shared_ptr<IStorage> {
       return creator_func(db_path);
     };
 
-    // 使用预计算的类型索引
-    const auto& type_idx = TypeIndexHolder<T>::kValue;
-    // 只使用类型索引注册创建器
-    creators_[type_idx] = std::move(wrapped_creator);
+    creators_[TypeIndexHolder<T>::kValue] = std::move(wrapped_creator);
   }
 
-  // 获取存储对象，将其从容器中移出
   template <typename T>
   std::shared_ptr<T> GetStorage(const HandleKey& key) {
     static_assert(std::is_base_of_v<IStorage, T>, "T must inherit from IStorage");
     std::lock_guard lock(mutex_);
 
-    // 使用预计算的类型索引
     const auto& type_idx = TypeIndexHolder<T>::kValue;
     StorageKey storage_key{key, type_idx};
 
-    // 先尝试从容器中获取存储对象
-    if (auto storage = ExtractStorage<T>(storage_key); storage) {
+    if (auto storage = TakeOutStorage<T>(storage_key); storage) {
       return storage;
     }
-
-    // 如果不存在，则创建新的存储对象
     return CreateStorage<T>(key, type_idx);
   }
 
-  // 归还存储对象，将其放回容器中
   template <typename T>
   void GiveBack(const HandleKey& key, std::shared_ptr<T> storage) {
     static_assert(std::is_base_of_v<IStorage, T>, "T must inherit from IStorage");
     if (!storage) {
       return;
     }
-
     std::lock_guard lock(mutex_);
 
-    // 使用预计算的类型索引
-    const auto& type_idx = TypeIndexHolder<T>::kValue;
-
-    // 确保容量足够
     EnsureCapacity();
-
-    // 将存储对象放入容器
-    InsertStorage(key, type_idx, std::move(storage));
+    InsertStorage(key, TypeIndexHolder<T>::kValue, std::move(storage));
   }
 
-  // 关闭指定HandleKey和类型的存储对象
   template <typename T>
   void CloseStorage(const HandleKey& key) {
     static_assert(std::is_base_of_v<IStorage, T>, "T must inherit from IStorage");
     std::lock_guard lock(mutex_);
 
-    // 使用预计算的类型索引
-    const auto& type_idx = TypeIndexHolder<T>::kValue;
-    StorageKey storage_key{key, type_idx};
-
-    // 移除指定的存储对象
+    StorageKey storage_key{key, TypeIndexHolder<T>::kValue};
     RemoveStorage(storage_key);
   }
 
-  // 清空所有存储对象和创建器
   void Clear() {
     std::lock_guard lock(mutex_);
     storage_list_.clear();
@@ -229,38 +209,31 @@ class StorageContainer {
       return;
     }
 
-    // 链表尾部是最久未使用的存储对象
     auto oldest_it = std::prev(storage_list_.end());
     StorageKey oldest_key{oldest_it->key, oldest_it->type_idx};
-    StorageId oldest_id = oldest_it->id;
 
-    // 从 storages_ 中移除指向该存储对象的迭代器
-    if (auto it = storages_.find(oldest_key); it != storages_.end()) {
-      // 直接通过 ID 移除该存储对象的迭代器，O(1) 操作
-      it->second.erase(oldest_id);
-
-      // 如果该 StorageKey 没有其他存储对象，则移除该键
-      if (it->second.empty()) {
-        storages_.erase(it);
-      }
+    auto it = storages_.find(oldest_key);
+    if (it == storages_.end()) {
+      printf("xxx!\n");
+      return;
     }
 
-    // 从链表中移除最久未使用的存储对象
+    it->second.erase(oldest_it->id);
+    if (it->second.empty()) {
+      storages_.erase(it);
+    }
     storage_list_.pop_back();
   }
 
-  // 检查并维持存储对象数量在最大限制之内
   void EnsureCapacity() {
     if (storage_list_.size() >= max_storage_count_ && !storage_list_.empty()) {
       RemoveOldestStorage();
     }
   }
 
-  // 从容器中移除指定的存储对象
   void RemoveStorage(const StorageKey& key) {
     auto it = storages_.find(key);
     if (it != storages_.end()) {
-      // 移除所有相同 StorageKey 的存储对象
       for (const auto& [id, list_it] : it->second) {
         storage_list_.erase(list_it);
       }
@@ -268,9 +241,8 @@ class StorageContainer {
     }
   }
 
-  // 从容器中获取存储对象，并将其移出
   template <typename T>
-  std::shared_ptr<T> ExtractStorage(const StorageKey& key) {
+  std::shared_ptr<T> TakeOutStorage(const StorageKey& key) {
     auto it = storages_.find(key);
     if (it == storages_.end() || it->second.empty()) {
       return nullptr;
@@ -279,15 +251,14 @@ class StorageContainer {
     // 获取第一个存储对象（可以是任意一个，这里选择第一个）
     auto inner_it = it->second.begin();
     auto list_it = inner_it->second;
+    if (list_it == storage_list_.end()) {
+      printf("xxx!\n");
+      return nullptr;
+    }
     auto storage = std::static_pointer_cast<T>(std::move(list_it->storage));
 
-    // 从链表中移除
     storage_list_.erase(list_it);
-
-    // 从哈希表中移除
     it->second.erase(inner_it);
-
-    // 如果该 StorageKey 没有其他存储对象，则移除该键
     if (it->second.empty()) {
       storages_.erase(it);
     }
@@ -295,56 +266,39 @@ class StorageContainer {
     return storage;
   }
 
-  // 使用创建器创建新的存储对象
   template <typename T>
   std::shared_ptr<T> CreateStorage(const HandleKey& key, const std::type_index& type_idx) {
-    // 通过 HandleKey 获取数据库路径
     std::string db_path = GetDbPathFromKey(key);
     if (db_path.empty()) {
       return nullptr;
     }
 
-    // 确保容量足够
-    EnsureCapacity();
-
-    // 从 creators_ 中查找创建器
     if (auto creator_it = creators_.find(type_idx); creator_it != creators_.end()) {
-      // 使用数据库路径创建存储实例
-      auto storage = creator_it->second(db_path);
-      if (storage) {
+      EnsureCapacity();
+      if (auto storage = creator_it->second(db_path); storage) {
         return std::static_pointer_cast<T>(storage);
       }
     }
-    
-    // 如果没有找到创建器，返回空指针
     return nullptr;
   }
 
-  // 将存储对象放入容器
   template <typename T>
   void InsertStorage(const HandleKey& key, const std::type_index& type_idx, std::shared_ptr<T> storage) {
     StorageKey storage_key{key, type_idx};
-
-    // 生成唯一ID
     StorageId id = next_storage_id_;
     next_storage_id_++;
 
-    // 将 storage 放入链表头部（最近使用）
     storage_list_.emplace_front(key, type_idx, std::move(storage), id);
-
-    // 将迭代器放入查找表
     storages_[storage_key][id] = storage_list_.begin();
   }
 
   mutable std::mutex mutex_{};
-  std::list<StorageLRU> storage_list_{};
-  std::unordered_map<StorageKey, std::unordered_map<StorageId, std::list<StorageLRU>::iterator>,
-                     StorageKeyHash, StorageKeyEqual>
-      storages_{};
-  std::unordered_map<std::type_index, CreatorFunc> creators_{};
-
   size_t max_storage_count_{kDefaultMaxStorageCount};
   StorageId next_storage_id_{0};
+
+  std::list<StorageLRU> storage_list_{};
+  std::unordered_map<StorageKey, Storages, StorageKeyHash, StorageKeyEqual> storages_{};
+  std::unordered_map<std::type_index, CreatorFunc> creators_{};
 };
 
 // *********************************************************************************************************
