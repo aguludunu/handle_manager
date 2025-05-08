@@ -200,8 +200,11 @@ class StorageContainer {
     creators_.clear();
   }
 
+  // 注册所有存储类型的创建器
+  void RegisterAllStorages();
+
  private:
-  StorageContainer() = default;
+  StorageContainer() { RegisterAllStorages(); }
   ~StorageContainer() = default;
 
   void RemoveOldestStorage() {
@@ -585,15 +588,14 @@ using mx::dba::dbs::StorageContainer;
 using mx::dba::dbs::User;
 using mx::dba::dbs::Weather;
 
-int main() {
-  // 初始化存储容器
-  auto& container = StorageContainer::Instance();
+// StorageContainer 类的 RegisterAllStorages 函数实现
+void mx::dba::dbs::StorageContainer::RegisterAllStorages() {
+  RegisterStorageCreator<AStorage>([](const std::string_view& db_path) { return CreateAStorage(db_path); });
+  RegisterStorageCreator<BStorage>([](const std::string_view& db_path) { return CreateBStorage(db_path); });
+}
 
-  // 注册创建函数
-  container.RegisterStorageCreator<AStorage>(
-      [](const std::string_view& db_path) { return CreateAStorage(db_path); });
-  container.RegisterStorageCreator<BStorage>(
-      [](const std::string_view& db_path) { return CreateBStorage(db_path); });
+int main() {
+  auto& container = StorageContainer::Instance();
 
   try {
     // 使用 A 数据库存储
