@@ -31,6 +31,7 @@ namespace mx::dba::dbs {
 
 static constexpr const char* kADBFileName = "A.db";
 static constexpr const char* kBDBFileName = "B.db";
+static constexpr size_t kDefaultMaxStorageCount{100};
 
 struct HandleKey {
   int param1{0};
@@ -72,11 +73,11 @@ struct StorageKeyEqual {
 // 类型索引持有者，用于预计算类型索引
 template <typename T>
 struct TypeIndexHolder {
-  static const std::type_index value;
+  static const std::type_index kValue;
 };
 
 template <typename T>
-const std::type_index TypeIndexHolder<T>::value = std::type_index(typeid(T));
+const std::type_index TypeIndexHolder<T>::kValue = std::type_index(typeid(T));
 
 class IStorage {
  public:
@@ -100,16 +101,14 @@ static std::string GetDbPathFromKey(const HandleKey& key) {
 
 // 存储对象的LRU包装类，包含最后使用时间信息
 struct StorageLRU {
-  HandleKey key{};                             // 存储对象的键
-  std::type_index type_idx{typeid(void)};      // 存储对象的类型
-  std::shared_ptr<IStorage> storage{nullptr};  // 实际的存储对象
-  std::chrono::steady_clock::time_point last_used_time{std::chrono::steady_clock::now()};  // 最后使用时间
+  HandleKey key{};
+  std::type_index type_idx{typeid(void)};
+  std::shared_ptr<IStorage> storage{nullptr};
+  std::chrono::steady_clock::time_point last_used_time{std::chrono::steady_clock::now()};
 
   StorageLRU() = default;
-
   StorageLRU(const HandleKey& k, const std::type_index& t, std::shared_ptr<IStorage> s)
       : key(k), type_idx(t), storage(std::move(s)) {}
-
   StorageLRU(StorageLRU&&) noexcept = default;
   StorageLRU& operator=(StorageLRU&&) noexcept = default;
   StorageLRU(const StorageLRU&) = delete;
@@ -120,9 +119,6 @@ struct StorageLRU {
 class StorageContainer {
  public:
   using CreatorFunc = std::function<std::shared_ptr<IStorage>(const std::string_view&)>;
-
-  // 默认最大存储对象数量
-  static constexpr size_t kDefaultMaxStorageCount{100};
 
   static StorageContainer& Instance() {
     static StorageContainer instance;
@@ -157,7 +153,7 @@ class StorageContainer {
     };
 
     // 使用预计算的类型索引
-    const auto& type_idx = TypeIndexHolder<T>::value;
+    const auto& type_idx = TypeIndexHolder<T>::kValue;
     StorageKey creator_key{key, type_idx};
     creators_[creator_key] = std::move(wrapped_creator);
   }
@@ -169,7 +165,7 @@ class StorageContainer {
     std::lock_guard lock(mutex_);
 
     // 使用预计算的类型索引
-    const auto& type_idx = TypeIndexHolder<T>::value;
+    const auto& type_idx = TypeIndexHolder<T>::kValue;
     StorageKey storage_key{key, type_idx};
 
     // 先尝试从容器中获取存储对象
@@ -192,7 +188,7 @@ class StorageContainer {
     std::lock_guard lock(mutex_);
 
     // 使用预计算的类型索引
-    const auto& type_idx = TypeIndexHolder<T>::value;
+    const auto& type_idx = TypeIndexHolder<T>::kValue;
 
     // 确保容量足够
     EnsureCapacity();
@@ -208,7 +204,7 @@ class StorageContainer {
     std::lock_guard lock(mutex_);
 
     // 使用预计算的类型索引
-    const auto& type_idx = TypeIndexHolder<T>::value;
+    const auto& type_idx = TypeIndexHolder<T>::kValue;
     StorageKey storage_key{key, type_idx};
 
     // 移除指定的存储对象
@@ -604,25 +600,32 @@ void PrintWeather(const mx::dba::dbs::Weather& weather) {
             << ", 湿度: " << weather.humidity << ", 天气状况: " << weather.weather_condition << std::endl;
 }
 
+using mx::dba::dbs::AStorage;
+using mx::dba::dbs::BStorage;
+using mx::dba::dbs::City;
 using mx::dba::dbs::CreateADBKey;
 using mx::dba::dbs::CreateAStorage;
 using mx::dba::dbs::CreateBDBKey;
 using mx::dba::dbs::CreateBStorage;
+using mx::dba::dbs::Order;
+using mx::dba::dbs::StorageContainer;
+using mx::dba::dbs::User;
+using mx::dba::dbs::Weather;
 
 int main() {
   // 初始化存储容器
-  auto& container = mx::dba::dbs::StorageContainer::Instance();
+  auto& container = StorageContainer::Instance();
 
   // 注册创建函数
-  container.RegisterStorageCreator<mx::dba::dbs::AStorage>(
+  container.RegisterStorageCreator<AStorage>(
       CreateADBKey(), [](const std::string_view& db_path) { return CreateAStorage(db_path); });
-  container.RegisterStorageCreator<mx::dba::dbs::BStorage>(
+  container.RegisterStorageCreator<BStorage>(
       CreateBDBKey(), [](const std::string_view& db_path) { return CreateBStorage(db_path); });
 
   try {
     // 使用 A 数据库存储
     std::cout << "\n===== 使用 A 数据库 =====\n" << std::endl;
-    auto a_storage = container.GetStorage<mx::dba::dbs::AStorage>(CreateADBKey());
+    auto a_storage = container.GetStorage<AStorage>(CreateADBKey());
     if (!a_storage) {
       std::cerr << "Failed to get A storage" << std::endl;
       return 1;
@@ -630,7 +633,7 @@ int main() {
 
     // 1. 读取 user 表的全部数据
     std::cout << "===== 所有用户 =====" << std::endl;
-    auto all_users = a_storage->GetAll<mx::dba::dbs::User>();
+    auto all_users = a_storage->GetAll<User>();
     for (const auto& user : all_users) {
       PrintUser(user);
     }
@@ -646,7 +649,7 @@ int main() {
 
     // 3. 读取 order 表的全部数据
     std::cout << "===== 所有订单 =====" << std::endl;
-    auto all_orders = a_storage->GetAll<mx::dba::dbs::Order>();
+    auto all_orders = a_storage->GetAll<Order>();
     for (const auto& order : all_orders) {
       PrintOrder(order);
     }
@@ -675,7 +678,7 @@ int main() {
 
     // 使用 B 数据库存储
     std::cout << "\n===== 使用 B 数据库 =====\n" << std::endl;
-    auto b_storage = container.GetStorage<mx::dba::dbs::BStorage>(CreateBDBKey());
+    auto b_storage = container.GetStorage<BStorage>(CreateBDBKey());
     if (!b_storage) {
       std::cerr << "Failed to get B storage" << std::endl;
       return 1;
@@ -683,7 +686,7 @@ int main() {
 
     // 1. 读取 city 表的全部数据
     std::cout << "===== 所有城市 =====" << std::endl;
-    auto all_cities = b_storage->GetAll<mx::dba::dbs::City>();
+    auto all_cities = b_storage->GetAll<City>();
     for (const auto& city : all_cities) {
       PrintCity(city);
     }
@@ -699,7 +702,7 @@ int main() {
 
     // 3. 读取 weather 表的全部数据
     std::cout << "===== 所有天气记录 =====" << std::endl;
-    auto all_weather = b_storage->GetAll<mx::dba::dbs::Weather>();
+    auto all_weather = b_storage->GetAll<Weather>();
     for (const auto& weather : all_weather) {
       PrintWeather(weather);
     }
@@ -731,75 +734,75 @@ int main() {
 
   // 测试 StorageContainer 类的各个接口
   std::cout << "\n===== 测试 StorageContainer 类的各个接口 =====\n" << std::endl;
-  
+
   // 设置最大存储对象数量
   container.SetMaxStorageCount(5);
   std::cout << "设置最大存储对象数量为: 5" << std::endl;
-  
+
   // 获取当前存储对象数量
   std::cout << "当前存储对象数量: " << container.GetStorageCount() << std::endl;
-  
+
   // 获取 AStorage 对象
   std::cout << "\n获取 AStorage 对象..." << std::endl;
-  auto a_storage_test = container.GetStorage<mx::dba::dbs::AStorage>(mx::dba::dbs::CreateADBKey());
+  auto a_storage_test = container.GetStorage<AStorage>(CreateADBKey());
   if (a_storage_test) {
     std::cout << "获取 AStorage 对象成功，数据库路径: " << a_storage_test->GetDatabasePath() << std::endl;
   } else {
     std::cout << "获取 AStorage 对象失败" << std::endl;
     return 1;
   }
-  
+
   // 获取 BStorage 对象
   std::cout << "\n获取 BStorage 对象..." << std::endl;
-  auto b_storage_test = container.GetStorage<mx::dba::dbs::BStorage>(mx::dba::dbs::CreateBDBKey());
+  auto b_storage_test = container.GetStorage<BStorage>(CreateBDBKey());
   if (b_storage_test) {
     std::cout << "获取 BStorage 对象成功，数据库路径: " << b_storage_test->GetDatabasePath() << std::endl;
   } else {
     std::cout << "获取 BStorage 对象失败" << std::endl;
     return 1;
   }
-  
+
   // 获取当前存储对象数量
   std::cout << "\n当前存储对象数量: " << container.GetStorageCount() << std::endl;
-  
+
   // 归还 AStorage 对象
   std::cout << "\n归还 AStorage 对象..." << std::endl;
-  container.GiveBack<mx::dba::dbs::AStorage>(mx::dba::dbs::CreateADBKey(), std::move(a_storage_test));
+  container.GiveBack(CreateADBKey(), std::move(a_storage_test));
   std::cout << "归还 AStorage 对象成功" << std::endl;
-  
+
   // 验证 a_storage_test 已被移动
   if (!a_storage_test) {
     std::cout << "验证: a_storage_test 已被移动，现在为空" << std::endl;
   }
-  
+
   // 获取当前存储对象数量
   std::cout << "\n当前存储对象数量: " << container.GetStorageCount() << std::endl;
-  
+
   // 归还 BStorage 对象
   std::cout << "\n归还 BStorage 对象..." << std::endl;
-  container.GiveBack<mx::dba::dbs::BStorage>(mx::dba::dbs::CreateBDBKey(), std::move(b_storage_test));
+  container.GiveBack(CreateBDBKey(), std::move(b_storage_test));
   std::cout << "归还 BStorage 对象成功" << std::endl;
-  
+
   // 获取当前存储对象数量
   std::cout << "\n当前存储对象数量: " << container.GetStorageCount() << std::endl;
-  
+
   // 关闭指定的存储对象
   std::cout << "\n关闭指定的 AStorage 对象..." << std::endl;
-  container.CloseStorage<mx::dba::dbs::AStorage>(mx::dba::dbs::CreateADBKey());
+  container.CloseStorage<AStorage>(CreateADBKey());
   std::cout << "关闭 AStorage 对象成功" << std::endl;
-  
+
   // 获取当前存储对象数量
   std::cout << "当前存储对象数量: " << container.GetStorageCount() << std::endl;
-  
+
   // 清空所有存储对象
   std::cout << "\n清空所有存储对象..." << std::endl;
   container.Clear();
   std::cout << "清空所有存储对象成功" << std::endl;
-  
+
   // 获取当前存储对象数量
   std::cout << "当前存储对象数量: " << container.GetStorageCount() << std::endl;
-  
+
   std::cout << "\n===== 测试完成 =====" << std::endl;
-  
+
   return 0;
 }
