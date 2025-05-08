@@ -54,6 +54,7 @@ struct HandleKeyHash {
 
 // 存储对象的键类型，由 HandleKey 和类型索引组成
 using StorageKey = std::pair<HandleKey, std::type_index>;
+using StorageId = uint64_t;
 
 // StorageKey 的哈希函数
 struct StorageKeyHash {
@@ -105,10 +106,11 @@ struct StorageLRU {
   std::type_index type_idx{typeid(void)};
   std::shared_ptr<IStorage> storage{nullptr};
   std::chrono::steady_clock::time_point last_used_time{std::chrono::steady_clock::now()};
+  StorageId id{0};  // 存储对象的唯一ID
 
   StorageLRU() = default;
-  StorageLRU(const HandleKey& k, const std::type_index& t, std::shared_ptr<IStorage> s)
-      : key(k), type_idx(t), storage(std::move(s)) {}
+  StorageLRU(const HandleKey& k, const std::type_index& t, std::shared_ptr<IStorage> s, StorageId i)
+      : key(k), type_idx(t), storage(std::move(s)), id(i) {}
   StorageLRU(StorageLRU&&) noexcept = default;
   StorageLRU& operator=(StorageLRU&&) noexcept = default;
   StorageLRU(const StorageLRU&) = delete;
@@ -223,7 +225,6 @@ class StorageContainer {
   StorageContainer() = default;
   ~StorageContainer() = default;
 
-  // 从容器中移除最久未使用的存储对象
   void RemoveOldestStorage() {
     if (storage_list_.empty()) {
       return;
@@ -232,7 +233,20 @@ class StorageContainer {
     // 链表尾部是最久未使用的存储对象
     auto oldest_it = std::prev(storage_list_.end());
     StorageKey oldest_key{oldest_it->key, oldest_it->type_idx};
-    storages_.erase(oldest_key);
+    StorageId oldest_id = oldest_it->id;
+
+    // 从 storages_ 中移除指向该存储对象的迭代器
+    if (auto it = storages_.find(oldest_key); it != storages_.end()) {
+      // 直接通过 ID 移除该存储对象的迭代器，O(1) 操作
+      it->second.erase(oldest_id);
+
+      // 如果该 StorageKey 没有其他存储对象，则移除该键
+      if (it->second.empty()) {
+        storages_.erase(it);
+      }
+    }
+
+    // 从链表中移除最久未使用的存储对象
     storage_list_.pop_back();
   }
 
@@ -247,7 +261,10 @@ class StorageContainer {
   void RemoveStorage(const StorageKey& key) {
     auto it = storages_.find(key);
     if (it != storages_.end()) {
-      storage_list_.erase(it->second);
+      // 移除所有相同 StorageKey 的存储对象
+      for (const auto& [id, list_it] : it->second) {
+        storage_list_.erase(list_it);
+      }
       storages_.erase(it);
     }
   }
@@ -256,16 +273,25 @@ class StorageContainer {
   template <typename T>
   std::shared_ptr<T> ExtractStorage(const StorageKey& key) {
     auto it = storages_.find(key);
-    if (it == storages_.end()) {
+    if (it == storages_.end() || it->second.empty()) {
       return nullptr;
     }
 
-    auto list_it = it->second;
+    // 获取第一个存储对象（可以是任意一个，这里选择第一个）
+    auto inner_it = it->second.begin();
+    auto list_it = inner_it->second;
     auto storage = std::static_pointer_cast<T>(std::move(list_it->storage));
 
-    // 从链表和查找表中移除
+    // 从链表中移除
     storage_list_.erase(list_it);
-    storages_.erase(it);
+
+    // 从哈希表中移除
+    it->second.erase(inner_it);
+
+    // 如果该 StorageKey 没有其他存储对象，则移除该键
+    if (it->second.empty()) {
+      storages_.erase(it);
+    }
 
     return storage;
   }
@@ -304,28 +330,26 @@ class StorageContainer {
   void InsertStorage(const HandleKey& key, const std::type_index& type_idx, std::shared_ptr<T> storage) {
     StorageKey storage_key{key, type_idx};
 
+    // 生成唯一ID
+    StorageId id = next_storage_id_;
+    next_storage_id_++;
+
     // 将 storage 放入链表头部（最近使用）
-    storage_list_.emplace_front(key, type_idx, std::move(storage));
+    storage_list_.emplace_front(key, type_idx, std::move(storage), id);
 
     // 将迭代器放入查找表
-    storages_[storage_key] = storage_list_.begin();
+    storages_[storage_key][id] = storage_list_.begin();
   }
 
-  // LRU 链表，存放所有的 StorageLRU 对象
+  mutable std::mutex mutex_{};
   std::list<StorageLRU> storage_list_{};
-
-  // 存储对象查找表，键为 HandleKey 和类型索引的组合，值为 storage_list_ 中的迭代器
-  std::unordered_map<StorageKey, std::list<StorageLRU>::iterator, StorageKeyHash, StorageKeyEqual>
+  std::unordered_map<StorageKey, std::unordered_map<StorageId, std::list<StorageLRU>::iterator>,
+                     StorageKeyHash, StorageKeyEqual>
       storages_{};
-
-  // 创建器容器
   std::unordered_map<StorageKey, CreatorFunc, StorageKeyHash, StorageKeyEqual> creators_{};
 
-  // 最大存储对象数量
   size_t max_storage_count_{kDefaultMaxStorageCount};
-
-  // 互斥锁，保证线程安全
-  mutable std::mutex mutex_{};
+  StorageId next_storage_id_{0};
 };
 
 // *********************************************************************************************************
