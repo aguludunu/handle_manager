@@ -144,8 +144,7 @@ class StorageContainer {
 
   // 注册存储创建器
   template <typename T>
-  void RegisterStorageCreator(const HandleKey& key,
-                              std::function<std::shared_ptr<T>(const std::string_view&)> creator) {
+  void RegisterStorageCreator(std::function<std::shared_ptr<T>(const std::string_view&)> creator) {
     static_assert(std::is_base_of_v<IStorage, T>, "T must inherit from IStorage");
     std::lock_guard lock(mutex_);
 
@@ -156,8 +155,8 @@ class StorageContainer {
 
     // 使用预计算的类型索引
     const auto& type_idx = TypeIndexHolder<T>::kValue;
-    StorageKey creator_key{key, type_idx};
-    creators_[creator_key] = std::move(wrapped_creator);
+    // 只使用类型索引注册创建器
+    creators_[type_idx] = std::move(wrapped_creator);
   }
 
   // 获取存储对象，将其从容器中移出
@@ -299,14 +298,6 @@ class StorageContainer {
   // 使用创建器创建新的存储对象
   template <typename T>
   std::shared_ptr<T> CreateStorage(const HandleKey& key, const std::type_index& type_idx) {
-    StorageKey storage_key{key, type_idx};
-
-    // 查找创建器
-    auto creator_it = creators_.find(storage_key);
-    if (creator_it == creators_.end()) {
-      return nullptr;
-    }
-
     // 通过 HandleKey 获取数据库路径
     std::string db_path = GetDbPathFromKey(key);
     if (db_path.empty()) {
@@ -316,13 +307,17 @@ class StorageContainer {
     // 确保容量足够
     EnsureCapacity();
 
-    // 使用数据库路径创建存储实例
-    auto storage = creator_it->second(db_path);
-    if (!storage) {
-      return nullptr;
+    // 从 creators_ 中查找创建器
+    if (auto creator_it = creators_.find(type_idx); creator_it != creators_.end()) {
+      // 使用数据库路径创建存储实例
+      auto storage = creator_it->second(db_path);
+      if (storage) {
+        return std::static_pointer_cast<T>(storage);
+      }
     }
-
-    return std::static_pointer_cast<T>(storage);
+    
+    // 如果没有找到创建器，返回空指针
+    return nullptr;
   }
 
   // 将存储对象放入容器
@@ -346,7 +341,7 @@ class StorageContainer {
   std::unordered_map<StorageKey, std::unordered_map<StorageId, std::list<StorageLRU>::iterator>,
                      StorageKeyHash, StorageKeyEqual>
       storages_{};
-  std::unordered_map<StorageKey, CreatorFunc, StorageKeyHash, StorageKeyEqual> creators_{};
+  std::unordered_map<std::type_index, CreatorFunc> creators_{};
 
   size_t max_storage_count_{kDefaultMaxStorageCount};
   StorageId next_storage_id_{0};
@@ -642,9 +637,9 @@ int main() {
 
   // 注册创建函数
   container.RegisterStorageCreator<AStorage>(
-      CreateADBKey(), [](const std::string_view& db_path) { return CreateAStorage(db_path); });
+      [](const std::string_view& db_path) { return CreateAStorage(db_path); });
   container.RegisterStorageCreator<BStorage>(
-      CreateBDBKey(), [](const std::string_view& db_path) { return CreateBStorage(db_path); });
+      [](const std::string_view& db_path) { return CreateBStorage(db_path); });
 
   try {
     // 使用 A 数据库存储
