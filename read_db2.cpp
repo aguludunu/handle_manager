@@ -138,17 +138,9 @@ class StorageContainer {
     if (!storage) {
       return nullptr;
     }
-    std::shared_ptr<IStorage> shared_storage;
-    if (auto conn_it = db_connections_.find(db_path); conn_it != db_connections_.end()) {
-      shared_storage = conn_it->second;
-    } else {
-      shared_storage = storage;
-      db_connections_[db_path] = shared_storage;
-    }
 
-    storages_[typed_key] = shared_storage;
-    key_to_path_[key] = db_path;
-    return std::static_pointer_cast<T>(shared_storage);
+    storages_[typed_key] = storage;
+    return std::static_pointer_cast<T>(storage);
   }
 
   template <typename T>
@@ -157,24 +149,8 @@ class StorageContainer {
     std::lock_guard lock(mutex_);
 
     TypedKey typed_key{key, std::type_index(typeid(T))};
-    auto it = storages_.find(typed_key);
-    if (it == storages_.end()) {
-      return;
-    }
-
-    std::string db_path = it->second->GetDatabasePath();
-    storages_.erase(it);
-    bool has_other_users = false;
-    for (const auto& [typed_key_iter, storage_iter] : storages_) {
-      if (storage_iter->GetDatabasePath() == db_path) {
-        has_other_users = true;
-        break;
-      }
-    }
-
-    if (!has_other_users) {
-      db_connections_.erase(db_path);
-      key_to_path_.erase(key);
+    if (auto it = storages_.find(typed_key); it != storages_.end()) {
+      storages_.erase(it);
     }
   }
 
@@ -182,16 +158,6 @@ class StorageContainer {
     std::lock_guard lock(mutex_);
     storages_.clear();
     creators_.clear();
-    db_connections_.clear();
-    key_to_path_.clear();
-  }
-
-  std::string GetDatabasePath(const HandleKey& key) const {
-    std::lock_guard lock(mutex_);
-    if (auto it = key_to_path_.find(key); it != key_to_path_.end()) {
-      return it->second;
-    }
-    return "";
   }
 
  private:
@@ -199,8 +165,6 @@ class StorageContainer {
   ~StorageContainer() = default;
   std::unordered_map<TypedKey, std::shared_ptr<IStorage>, TypedKeyHash, TypedKeyEqual> storages_{};
   std::unordered_map<TypedKey, CreatorFunc, TypedKeyHash, TypedKeyEqual> creators_{};
-  std::unordered_map<std::string, std::shared_ptr<IStorage>> db_connections_{};
-  std::unordered_map<HandleKey, std::string, HandleKeyHash> key_to_path_{};
   mutable std::mutex mutex_{};
 };
 
