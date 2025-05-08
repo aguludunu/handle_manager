@@ -70,9 +70,22 @@ class IStorage {
   [[nodiscard]] virtual std::string GetDatabasePath() const = 0;
 };
 
+// 根据HandleKey获取数据库路径
+static std::string GetDbPathFromKey(const HandleKey& key) {
+  // 根据HandleKey的param1字段判断数据库类型
+  switch (key.param1) {
+    case 1:  // A数据库
+      return kADBFileName;
+    case 2:  // B数据库
+      return kBDBFileName;
+    default:
+      return "";
+  }
+}
+
 class StorageContainer {
  public:
-  using CreatorFunc = std::function<std::shared_ptr<IStorage>()>;
+  using CreatorFunc = std::function<std::shared_ptr<IStorage>(const std::string_view&)>;
 
   static StorageContainer& Instance() {
     static StorageContainer instance;
@@ -85,13 +98,15 @@ class StorageContainer {
   StorageContainer& operator=(StorageContainer&&) noexcept = delete;
 
   template <typename T>
-  void RegisterStorageCreator(const HandleKey& key, std::function<std::shared_ptr<T>()> creator) {
+  void RegisterStorageCreator(const HandleKey& key,
+                              std::function<std::shared_ptr<T>(const std::string_view&)> creator) {
     static_assert(std::is_base_of_v<IStorage, T>, "T must inherit from IStorage");
     std::lock_guard lock(mutex_);
 
     TypedKey typed_key{key, std::type_index(typeid(T))};
-    auto wrapped_creator = [creator_func = std::move(creator)]() -> std::shared_ptr<IStorage> {
-      return creator_func();
+    auto wrapped_creator =
+        [creator_func = std::move(creator)](const std::string_view& db_path) -> std::shared_ptr<IStorage> {
+      return creator_func(db_path);
     };
 
     creators_[typed_key] = std::move(wrapped_creator);
@@ -112,12 +127,17 @@ class StorageContainer {
       return nullptr;
     }
 
-    auto storage = creator_it->second();
-    if (!storage) {
+    // 通过HandleKey获取数据库路径
+    std::string db_path = GetDbPathFromKey(key);
+    if (db_path.empty()) {
       return nullptr;
     }
 
-    std::string db_path = storage->GetDatabasePath();
+    // 使用数据库路径创建存储实例
+    auto storage = creator_it->second(db_path);
+    if (!storage) {
+      return nullptr;
+    }
     std::shared_ptr<IStorage> shared_storage;
     if (auto conn_it = db_connections_.find(db_path); conn_it != db_connections_.end()) {
       shared_storage = conn_it->second;
@@ -289,7 +309,9 @@ class AStorage : public IStorage {
   ADBStorage storage_;
 };
 
-std::shared_ptr<AStorage> CreateAStorage() { return std::make_shared<AStorage>(kADBFileName); }
+std::shared_ptr<AStorage> CreateAStorage(const std::string_view& db_path) {
+  return std::make_shared<AStorage>(db_path);
+}
 
 HandleKey CreateADBKey() {
   HandleKey key;
@@ -409,7 +431,9 @@ class BStorage : public IStorage {
   BDBStorage storage_;
 };
 
-std::shared_ptr<BStorage> CreateBStorage() { return std::make_shared<BStorage>(kBDBFileName); }
+std::shared_ptr<BStorage> CreateBStorage(const std::string_view& db_path) {
+  return std::make_shared<BStorage>(db_path);
+}
 
 HandleKey CreateBDBKey() {
   HandleKey key;
@@ -462,8 +486,10 @@ int main() {
   auto& container = mx::dba::dbs::StorageContainer::Instance();
 
   // 注册创建函数
-  container.RegisterStorageCreator<mx::dba::dbs::AStorage>(CreateADBKey(), CreateAStorage);
-  container.RegisterStorageCreator<mx::dba::dbs::BStorage>(CreateBDBKey(), CreateBStorage);
+  container.RegisterStorageCreator<mx::dba::dbs::AStorage>(
+      CreateADBKey(), [](const std::string_view& db_path) { return CreateAStorage(db_path); });
+  container.RegisterStorageCreator<mx::dba::dbs::BStorage>(
+      CreateBDBKey(), [](const std::string_view& db_path) { return CreateBStorage(db_path); });
 
   try {
     // 使用 A 数据库存储
