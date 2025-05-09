@@ -350,7 +350,7 @@ inline auto CreateADBStorage(const std::string_view& db_path) {
 }
 
 // A 数据库存储类型
-using ADBStorage = decltype(CreateADBStorage(kADBFileName));
+using ADBStorage = decltype(CreateADBStorage(""));
 
 // A 数据库存储包装类，实现 IStorage 接口
 class AStorage : public IStorage {
@@ -472,7 +472,7 @@ inline auto CreateBDBStorage(const std::string_view& db_path) {
 }
 
 // B 数据库存储类型
-using BDBStorage = decltype(CreateBDBStorage(kBDBFileName));
+using BDBStorage = decltype(CreateBDBStorage(""));
 
 // B 数据库存储包装类，实现 IStorage 接口
 class BStorage : public IStorage {
