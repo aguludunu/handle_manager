@@ -28,6 +28,13 @@ using sqlite_orm::on;
 using sqlite_orm::primary_key;
 using sqlite_orm::where;
 
+uint64_t GetMonotonicTime() {
+  struct timespec ts {};
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  uint64_t ns = static_cast<uint64_t>(ts.tv_sec) * 1000 * 1000 * 1000 + static_cast<uint64_t>(ts.tv_nsec);
+  return ns;
+}
+
 namespace mx::dba::dbs {
 
 class IStorage;
@@ -363,7 +370,19 @@ class AStorage : public IStorage {
   // 获取所有数据
   template <typename T>
   std::vector<T> GetAll() {
-    return storage_.get_all<T>();
+    auto start = GetMonotonicTime();
+    auto statement = storage_.prepare(sqlite_orm::get_all<T>());
+    auto end = GetMonotonicTime();
+    printf("[%s:%d]prepare cost %lu\n", __FILE__, __LINE__, end - start);
+
+    std::string sql = statement.sql();
+    printf("[%s:%d]sql = %s\n", __FILE__, __LINE__, sql.c_str());
+
+    start = GetMonotonicTime();
+    auto ret = storage_.execute(statement);
+    end = GetMonotonicTime();
+    printf("[%s:%d]execute cost %lu\n", __FILE__, __LINE__, end - start);
+    return ret;
   }
 
   // 根据条件获取用户
