@@ -200,7 +200,6 @@ class StorageContainer {
     creators_.clear();
   }
 
-  // 注册所有存储类型的创建器
   void RegisterAllStorages();
 
  private:
