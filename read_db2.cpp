@@ -387,24 +387,34 @@ class AStorage : public IStorage {
 
   // 根据条件获取用户
   std::vector<User> GetUsersByCondition(const std::string_view& username_pattern, int min_age) {
-    return storage_.get_all<User>(
+    auto query = sqlite_orm::get_all<User>(
         where(like(&User::username, username_pattern) && greater_than(&User::age, min_age)));
+    auto statement = storage_.prepare(query);
+    printf("[%s:%d]sql = %s\n", __FILE__, __LINE__, statement.sql().c_str());
+
+    return storage_.execute(statement);
   }
 
   // 根据条件获取订单
   std::vector<Order> GetOrdersByCondition(int user_id, double min_price) {
-    return storage_.get_all<Order>(
+    auto query = sqlite_orm::get_all<Order>(
         where(is_equal(&Order::user_id, user_id) && greater_than(&Order::price, min_price)));
+    auto statement = storage_.prepare(query);
+    printf("[%s:%d]sql = %s\n", __FILE__, __LINE__, statement.sql().c_str());
+
+    return storage_.execute(statement);
   }
 
   // 获取用户订单关联数据
   std::vector<UserOrder> GetUserOrders() {
-    auto rows =
-        storage_.select(columns(&User::user_id, &User::username, &User::email, &User::age,
-                                &User::registration_date, &Order::order_id, &Order::user_id,
-                                &Order::product_name, &Order::quantity, &Order::price, &Order::order_date),
-                        inner_join<Order>(on(c(&User::user_id) == &Order::user_id)));
+    auto statement = storage_.prepare(sqlite_orm::select(
+        columns(&User::user_id, &User::username, &User::email, &User::age, &User::registration_date,
+                &Order::order_id, &Order::user_id, &Order::product_name, &Order::quantity, &Order::price,
+                &Order::order_date),
+        inner_join<Order>(on(c(&User::user_id) == &Order::user_id))));
+    printf("[%s:%d]sql = %s\n", __FILE__, __LINE__, statement.sql().c_str());
 
+    auto rows = storage_.execute(statement);
     std::vector<UserOrder> result;
     result.reserve(rows.size());
 
