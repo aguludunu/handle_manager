@@ -115,7 +115,7 @@ message("-- CMAKE_CXX_FLAGS_RELEASE: ${CMAKE_CXX_FLAGS_RELEASE}")
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/thirdparty)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/nds_sqlite)
-# add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/handle_manager)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/dbs_handle_manager)
 
 # add_executable(handle_manager ${CMAKE_CURRENT_SOURCE_DIR}/example.cpp)
 # target_link_libraries(handle_manager PRIVATE MxSqliteHandleManager)
