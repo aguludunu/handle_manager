@@ -244,6 +244,8 @@ class StorageContainer {
     auto it = storages_.find(key);
     if (it != storages_.end()) {
       for (const auto& [id, list_it] : it->second) {
+        printf("[%s:%d]Close storage %s\n", __FILE__, __LINE__,
+               list_it->storage->GetDatabasePath().c_str());
         storage_list_.erase(list_it);
       }
       storages_.erase(it);
@@ -285,6 +287,7 @@ class StorageContainer {
     if (auto creator_it = creators_.find(type_idx); creator_it != creators_.end()) {
       EnsureCapacity();
       if (auto storage = creator_it->second(db_path); storage) {
+        printf("[%s:%d]Create storage %s\n", __FILE__, __LINE__, db_path.c_str());
         return std::static_pointer_cast<T>(storage);
       }
     }
