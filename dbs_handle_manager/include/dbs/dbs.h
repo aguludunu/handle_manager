@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <tuple>
+#include <vector>
 
 namespace mx::dba::dbs {
 
@@ -23,5 +24,7 @@ struct HandleKeyHash {
            (std::hash<int>()(key.param3) << 2) ^ (std::hash<int>()(key.param4) << 3);
   }
 };
+
+using BLOB = std::vector<char>;
 
 }  // namespace mx::dba::dbs

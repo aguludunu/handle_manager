@@ -10,12 +10,7 @@ class AStorageImpl;
 class AStorage : public IStorage {
  public:
   explicit AStorage(const std::string_view& db_path);
-  ~AStorage() override;
-
-  AStorage(const AStorage&) = delete;
-  AStorage& operator=(const AStorage&) = delete;
-  AStorage(AStorage&&) noexcept = delete;
-  AStorage& operator=(AStorage&&) noexcept = delete;
+  ~AStorage() override = default;
 
   [[nodiscard]] std::string GetDatabasePath() const override { return db_path_; }
 
@@ -25,6 +20,8 @@ class AStorage : public IStorage {
   std::vector<Order> GetAllOrders();
   std::vector<Order> GetOrdersByCondition(int user_id, double min_price);
   std::vector<UserOrder> GetUserOrders();
+  std::vector<DataTypePartial> GetAllDataTypePartials();
+  std::vector<DataTypePartial> GetDataTypePartialsByCondition(const std::string& text_pattern);
 
  private:
   std::string db_path_{};

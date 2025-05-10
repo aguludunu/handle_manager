@@ -15,4 +15,14 @@ std::vector<User> GetAllUsers(const HandleKey& key) {
   return storage->GetAllUsers();
 }
 
+std::vector<DataTypePartial> GetPartialDataTypes(const HandleKey& key) {
+  auto storage = StorageContainer::Instance().GetStorage<AStorage>(key);
+  if (!storage) {
+    printf("xxx!\n");
+    return {};
+  }
+
+  return storage->GetAllDataTypePartials();
+}
+
 }  // namespace mx::dba::dbs

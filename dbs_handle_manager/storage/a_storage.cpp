@@ -1,5 +1,6 @@
 #include "storage/a_storage.h"
 
+#include "dbs/service/a_service.h"
 #include "sqlite_orm/sqlite_orm.h"
 
 using sqlite_orm::c;
@@ -30,7 +31,15 @@ auto CreateStorage(const std::string& db_path) {
                  make_column("quantity", &Order::quantity), make_column("price", &Order::price),
                  make_column("order_date", &Order::order_date));
 
-  return make_storage(db_path, users_table, orders_table);
+  auto data_types_table =
+      make_table("DataTypes", make_column("int_nullable", &DataTypePartial::int_nullable),
+                 make_column("float_not_null", &DataTypePartial::float_not_null),
+                 make_column("float_nullable", &DataTypePartial::float_nullable),
+                 make_column("text_not_null", &DataTypePartial::text_not_null),
+                 make_column("text_nullable", &DataTypePartial::text_nullable),
+                 make_column("blob_data", &DataTypePartial::blob_data));
+
+  return make_storage(db_path, users_table, orders_table, data_types_table);
 }
 
 class AStorageImpl {
@@ -47,6 +56,11 @@ class AStorageImpl {
   std::vector<Order> GetAllOrders() { return storage_.get_all<Order>(); }
   std::vector<Order> GetOrdersByCondition(int user_id, double min_price) {
     return storage_.get_all<Order>(where(c(&Order::user_id) == user_id && c(&Order::price) > min_price));
+  }
+
+  std::vector<DataTypePartial> GetAllDataTypePartials() { return storage_.get_all<DataTypePartial>(); }
+  std::vector<DataTypePartial> GetDataTypePartialsByCondition(const std::string& text_pattern) {
+    return storage_.get_all<DataTypePartial>(where(like(&DataTypePartial::text_not_null, text_pattern)));
   }
 
   std::vector<UserOrder> GetUserOrders() {
@@ -80,8 +94,6 @@ class AStorageImpl {
 AStorage::AStorage(const std::string_view& db_path)
     : db_path_(std::string(db_path)), impl_(std::make_unique<AStorageImpl>(std::string(db_path))) {}
 
-AStorage::~AStorage() = default;
-
 std::vector<User> AStorage::GetAllUsers() { return impl_->GetAllUsers(); }
 
 std::vector<User> AStorage::GetUsersByCondition(const std::string_view& username_pattern, int min_age) {
@@ -95,6 +107,12 @@ std::vector<Order> AStorage::GetOrdersByCondition(int user_id, double min_price)
 }
 
 std::vector<UserOrder> AStorage::GetUserOrders() { return impl_->GetUserOrders(); }
+
+std::vector<DataTypePartial> AStorage::GetAllDataTypePartials() { return impl_->GetAllDataTypePartials(); }
+
+std::vector<DataTypePartial> AStorage::GetDataTypePartialsByCondition(const std::string& text_pattern) {
+  return impl_->GetDataTypePartialsByCondition(text_pattern);
+}
 
 std::shared_ptr<AStorage> CreateAStorage(const std::string_view& db_path) {
   return std::make_shared<AStorage>(db_path);

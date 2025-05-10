@@ -7766,15 +7766,14 @@ namespace sqlite_orm {
      *  IFNULL(X,Y) function https://www.sqlite.org/lang_corefunc.html#ifnull
      */
     template<class R = void, class X, class Y>
-    auto
-    ifnull(X x, Y y) -> internal::built_in_function_t<
-                         typename mpl::conditional_t<  //  choose R or common type
-                             std::is_void<R>::value,
-                             std::common_type<internal::field_type_or_type_t<X>, internal::field_type_or_type_t<Y>>,
-                             polyfill::type_identity<R>>::type,
-                         internal::ifnull_string,
-                         X,
-                         Y> {
+    auto ifnull(X x, Y y) -> internal::built_in_function_t<
+        typename mpl::conditional_t<  //  choose R or common type
+            std::is_void<R>::value,
+            std::common_type<internal::field_type_or_type_t<X>, internal::field_type_or_type_t<Y>>,
+            polyfill::type_identity<R>>::type,
+        internal::ifnull_string,
+        X,
+        Y> {
         return {std::make_tuple(std::move(x), std::move(y))};
     }
 
@@ -11801,8 +11800,9 @@ namespace sqlite_orm {
                    decltype(notnull) notnull_,
                    decltype(dflt_value) dflt_value_,
                    decltype(pk) pk_) :
-            cid(cid_), name(std::move(name_)), type(std::move(type_)), notnull(notnull_),
-            dflt_value(std::move(dflt_value_)), pk(pk_) {}
+            cid(cid_),
+            name(std::move(name_)), type(std::move(type_)), notnull(notnull_), dflt_value(std::move(dflt_value_)),
+            pk(pk_) {}
 #endif
     };
 
@@ -11823,8 +11823,9 @@ namespace sqlite_orm {
                     decltype(dflt_value) dflt_value_,
                     decltype(pk) pk_,
                     decltype(hidden) hidden_) :
-            cid(cid_), name(std::move(name_)), type(std::move(type_)), notnull(notnull_),
-            dflt_value(std::move(dflt_value_)), pk(pk_), hidden{hidden_} {}
+            cid(cid_),
+            name(std::move(name_)), type(std::move(type_)), notnull(notnull_), dflt_value(std::move(dflt_value_)),
+            pk(pk_), hidden{hidden_} {}
 #endif
     };
 }
@@ -13757,7 +13758,9 @@ namespace sqlite_orm {
 
             void retain() {
                 if (1 == ++this->_retain_count) {
-                    auto rc = sqlite3_open(this->filename.c_str(), &this->db);
+                    // auto rc = sqlite3_open(this->filename.c_str(), &this->db);
+                    printf("[%s:%d]open %s\n", __FILE__, __LINE__, this->filename.c_str());
+                    auto rc = sqlite3_open_v2(this->filename.c_str(), &this->db, SQLITE_OPEN_READONLY, NULL);
                     if (rc != SQLITE_OK) {
                         throw_translated_sqlite_error(db);
                     }
@@ -13766,6 +13769,7 @@ namespace sqlite_orm {
 
             void release() {
                 if (0 == --this->_retain_count) {
+                    printf("[%s:%d]close %s\n", __FILE__, __LINE__, this->filename.c_str());
                     auto rc = sqlite3_close(this->db);
                     if (rc != SQLITE_OK) {
                         throw_translated_sqlite_error(db);
@@ -16948,8 +16952,8 @@ namespace sqlite_orm {
             transaction_guard_t(connection_ref connection_,
                                 std::function<void()> commit_func_,
                                 std::function<void()> rollback_func_) :
-                connection(std::move(connection_)), commit_func(std::move(commit_func_)),
-                rollback_func(std::move(rollback_func_)) {}
+                connection(std::move(connection_)),
+                commit_func(std::move(commit_func_)), rollback_func(std::move(rollback_func_)) {}
 
             transaction_guard_t(transaction_guard_t&& other) :
                 commit_on_destroy(other.commit_on_destroy), connection(std::move(other.connection)),
@@ -17374,9 +17378,9 @@ namespace sqlite_orm {
                       xdestroy_fn_t destroy,
                       sqlite_func_t func,
                       memory_space udfMemorySpace) :
-                name{std::move(name)}, argumentsCount{argumentsCount}, constructAt{std::move(constructAt)},
-                destroy{destroy}, func{func}, finalAggregateCall{nullptr}, udfAllocator{},
-                udfMemorySpace{udfMemorySpace} {}
+                name{std::move(name)},
+                argumentsCount{argumentsCount}, constructAt{std::move(constructAt)}, destroy{destroy}, func{func},
+                finalAggregateCall{nullptr}, udfAllocator{}, udfMemorySpace{udfMemorySpace} {}
 
             udf_proxy(std::string name,
                       int argumentsCount,
@@ -17385,9 +17389,9 @@ namespace sqlite_orm {
                       sqlite_func_t func,
                       final_call_fn_t finalAggregateCall,
                       memory_alloc udfAllocator) :
-                name{std::move(name)}, argumentsCount{argumentsCount}, constructAt{std::move(constructAt)},
-                destroy{destroy}, func{func}, finalAggregateCall{finalAggregateCall}, udfAllocator{udfAllocator},
-                udfMemorySpace{} {}
+                name{std::move(name)},
+                argumentsCount{argumentsCount}, constructAt{std::move(constructAt)}, destroy{destroy}, func{func},
+                finalAggregateCall{finalAggregateCall}, udfAllocator{udfAllocator}, udfMemorySpace{} {}
 
             ~udf_proxy() {
                 // destruct

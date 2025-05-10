@@ -65,6 +65,11 @@ const std::type_index TypeIndexHolder<T>::kValue = std::type_index(typeid(T));
 // 各种 Storage 的通用接口，好放在容器中统一管理
 class IStorage {
  public:
+  IStorage() = default;
+  IStorage(const IStorage&) = delete;
+  IStorage& operator=(const IStorage&) = delete;
+  IStorage(IStorage&&) noexcept = delete;
+  IStorage& operator=(IStorage&&) noexcept = delete;
   virtual ~IStorage() = default;
 
   [[nodiscard]] virtual std::string GetDatabasePath() const = 0;

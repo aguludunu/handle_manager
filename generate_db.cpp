@@ -91,6 +91,53 @@ void create_database_a(const std::string& db_name) {
     }
     std::cout << "成功向Orders表插入5条数据" << std::endl;
     
+    // 创建数据类型表，包含各种类型的数据
+    const std::string create_data_types = 
+        "CREATE TABLE IF NOT EXISTS DataTypes ("
+        "id INTEGER PRIMARY KEY,"
+        "int_not_null INTEGER NOT NULL,"
+        "int_nullable INTEGER,"
+        "float_not_null REAL NOT NULL,"
+        "float_nullable REAL,"
+        "text_not_null TEXT NOT NULL,"
+        "text_nullable TEXT,"
+        "blob_data BLOB"
+        ");";    
+    
+    exec_sql(db, create_data_types, "创建DataTypes表");
+    std::cout << "成功创建表: DataTypes" << std::endl;
+    
+    // 在 int_not_null 列上创建索引
+    const std::string create_int_index = 
+        "CREATE INDEX IF NOT EXISTS idx_data_types_int_not_null "
+        "ON DataTypes(int_not_null);";    
+    exec_sql(db, create_int_index, "创建int_not_null索引");
+    std::cout << "成功创建索引: idx_data_types_int_not_null" << std::endl;
+    
+    // 在 text_not_null 和 float_not_null 列的组合上创建复合索引
+    const std::string create_composite_index = 
+        "CREATE INDEX IF NOT EXISTS idx_data_types_text_float "
+        "ON DataTypes(text_not_null, float_not_null);";    
+    exec_sql(db, create_composite_index, "创建text_not_null和float_not_null的复合索引");
+    std::cout << "成功创建索引: idx_data_types_text_float" << std::endl;
+    
+    // 向DataTypes表插入数据
+    const std::vector<std::string> data_types_inserts = {
+        "INSERT INTO DataTypes (int_not_null, int_nullable, float_not_null, float_nullable, text_not_null, text_nullable, blob_data) "
+        "VALUES (100, 200, 3.14, 2.71828, '必填字符串', '可空字符串', X'48656C6C6F20576F726C64');",
+        
+        "INSERT INTO DataTypes (int_not_null, int_nullable, float_not_null, float_nullable, text_not_null, text_nullable, blob_data) "
+        "VALUES (101, NULL, 6.28, NULL, '另一个必填字符串', NULL, X'42696E61727920446174612054657374');",
+        
+        "INSERT INTO DataTypes (int_not_null, int_nullable, float_not_null, float_nullable, text_not_null, text_nullable, blob_data) "
+        "VALUES (102, 300, 1.618, 0.577, '第三个字符串', '非空可选字符串', NULL);"
+    };
+    
+    for (const auto& sql : data_types_inserts) {
+        exec_sql(db, sql, "向DataTypes表插入数据");
+    }
+    std::cout << "成功向DataTypes表插入3条数据" << std::endl;
+    
     // 关闭数据库连接
     sqlite3_close(db);
     std::cout << "数据库 " << db_name << " 创建完成" << std::endl << std::endl;
