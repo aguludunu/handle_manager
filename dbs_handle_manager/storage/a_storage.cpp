@@ -5,6 +5,7 @@
 
 using sqlite_orm::c;
 using sqlite_orm::columns;
+using sqlite_orm::get_all;
 using sqlite_orm::greater_than;
 using sqlite_orm::inner_join;
 using sqlite_orm::is_equal;
@@ -20,24 +21,29 @@ using sqlite_orm::where;
 namespace mx::dba::dbs {
 
 auto CreateStorage(const std::string& db_path) {
+  // CREATE TABLE Users (user_id INTEGER PRIMARY KEY,username TEXT NOT NULL,email TEXT,age
+  // INTEGER,registration_date INTEGER)
   auto users_table = make_table("Users", make_column("user_id", &User::user_id, primary_key()),
                                 make_column("username", &User::username),
                                 make_column("email", &User::email), make_column("age", &User::age),
                                 make_column("registration_date", &User::registration_date));
-
+  // CREATE TABLE Orders (order_id INTEGER PRIMARY KEY,user_id INTEGER,product_name TEXT NOT NULL,quantity
+  // INTEGER,price REAL,order_date INTEGER,FOREIGN KEY (user_id) REFERENCES Users(user_id))
   auto orders_table =
       make_table("Orders", make_column("order_id", &Order::order_id, primary_key()),
                  make_column("user_id", &Order::user_id), make_column("product_name", &Order::product_name),
                  make_column("quantity", &Order::quantity), make_column("price", &Order::price),
                  make_column("order_date", &Order::order_date));
-
-  auto data_types_table =
-      make_table("DataTypes", make_column("int_nullable", &DataTypePartial::int_nullable),
-                 make_column("float_not_null", &DataTypePartial::float_not_null),
-                 make_column("float_nullable", &DataTypePartial::float_nullable),
-                 make_column("text_not_null", &DataTypePartial::text_not_null),
-                 make_column("text_nullable", &DataTypePartial::text_nullable),
-                 make_column("blob_data", &DataTypePartial::blob_data));
+  // CREATE TABLE DataTypes (id INTEGER PRIMARY KEY,int_not_null INTEGER NOT NULL,int_nullable
+  // INTEGER,float_not_null REAL NOT NULL,float_nullable REAL,text_not_null TEXT NOT NULL,text_nullable
+  // TEXT,blob_data BLOB)
+  // 注意: id 和 int_not_null 字段没有映射，这样可以节省一次数据转换
+  auto data_types_table = make_table("DataTypes", make_column("int_nullable", &DataTypeInDB::int_nullable),
+                                     make_column("float_not_null", &DataTypeInDB::float_not_null),
+                                     make_column("float_nullable", &DataTypeInDB::float_nullable),
+                                     make_column("text_not_null", &DataTypeInDB::text_not_null),
+                                     make_column("text_nullable", &DataTypeInDB::text_nullable),
+                                     make_column("blob_data", &DataTypeInDB::blob_data));
 
   return make_storage(db_path, users_table, orders_table, data_types_table);
 }
@@ -48,27 +54,50 @@ class AStorageImpl {
   explicit AStorageImpl(std::string db_path)
       : db_path_(std::move(db_path)), storage_(CreateStorage(db_path_)) {}
 
-  std::vector<User> GetAllUsers() { return storage_.get_all<User>(); }
-  std::vector<User> GetUsersByCondition(const std::string_view& username_pattern, int min_age) {
-    return storage_.get_all<User>(
-        where(like(&User::username, std::string(username_pattern)) && c(&User::age) > min_age));
-  }
-  std::vector<Order> GetAllOrders() { return storage_.get_all<Order>(); }
-  std::vector<Order> GetOrdersByCondition(int user_id, double min_price) {
-    return storage_.get_all<Order>(where(c(&Order::user_id) == user_id && c(&Order::price) > min_price));
+  std::vector<User> GetAllUsers() {
+    auto statement = storage_.prepare(get_all<User>());
+    printf("[%s:%d]sql = %s\n", __FILE__, __LINE__, statement.sql().c_str());
+
+    return storage_.execute(statement);
   }
 
-  std::vector<DataTypePartial> GetAllDataTypePartials() { return storage_.get_all<DataTypePartial>(); }
-  std::vector<DataTypePartial> GetDataTypePartialsByCondition(const std::string& text_pattern) {
-    return storage_.get_all<DataTypePartial>(where(like(&DataTypePartial::text_not_null, text_pattern)));
+  std::vector<UserPartial> GetPartialUsers() {
+    auto statement = storage_.prepare(select(columns(&User::user_id, &User::username)));
+    printf("[%s:%d]sql = %s\n", __FILE__, __LINE__, statement.sql().c_str());
+
+    auto rows = storage_.execute(statement);
+    std::vector<UserPartial> result;
+    result.reserve(rows.size());
+
+    for (const auto& row : rows) {
+      const auto& [userid, username] = row;
+      result.push_back({userid, username});
+    }
+
+    return result;
   }
 
-  std::vector<UserOrder> GetUserOrders() {
-    auto statement = storage_.prepare(
-        select(columns(&User::user_id, &User::username, &User::email, &User::age, &User::registration_date,
-                       &Order::order_id, &Order::user_id, &Order::product_name, &Order::quantity,
-                       &Order::price, &Order::order_date),
-               inner_join<Order>(on(c(&User::user_id) == &Order::user_id))));
+  std::vector<UserPartial> GetPartialUsersByAge(int age) {
+    auto statement =
+        storage_.prepare(select(columns(&User::user_id, &User::username), where(c(&User::age) = age)));
+    printf("[%s:%d]sql = %s\n", __FILE__, __LINE__, statement.sql().c_str());
+
+    auto rows = storage_.execute(statement);
+    std::vector<UserPartial> result;
+    result.reserve(rows.size());
+
+    for (const auto& row : rows) {
+      const auto& [userid, username] = row;
+      result.push_back({userid, username});
+    }
+
+    return result;
+  }
+
+  std::vector<UserOrder> GetUserOrdersByUserId(int user_id) {
+    auto statement = storage_.prepare(select(
+        columns(&User::user_id, &User::username, &Order::order_id, &Order::product_name),
+        inner_join<Order>(on(c(&User::user_id) == &Order::user_id)), where(c(&User::user_id) == user_id)));
     printf("[%s:%d]sql = %s\n", __FILE__, __LINE__, statement.sql().c_str());
 
     auto rows = storage_.execute(statement);
@@ -76,14 +105,18 @@ class AStorageImpl {
     result.reserve(rows.size());
 
     for (const auto& row : rows) {
-      const auto& [user_id, username, email, age, registration_date, order_id, order_user_id, product_name,
-                   quantity, price, order_date] = row;
-      User user{user_id, username, email, age, registration_date};
-      Order order{order_id, order_user_id, product_name, quantity, price, order_date};
-      result.push_back({user, order});
+      const auto& [userid, username, order_id, product_name] = row;
+      result.push_back({userid, username, order_id, product_name});
     }
 
     return result;
+  }
+
+  std::vector<DataTypeInDB> GetAllDataTypePartials() {
+    auto statement = storage_.prepare(get_all<DataTypeInDB>());
+    printf("[%s:%d]sql = %s\n", __FILE__, __LINE__, statement.sql().c_str());
+
+    return storage_.execute(statement);
   }
 
  private:
@@ -91,28 +124,30 @@ class AStorageImpl {
   StorageType storage_;
 };
 
+// *********************************************************************************************************
+// *********************************************************************************************************
+// *********************************************************************************************************
+
 AStorage::AStorage(const std::string_view& db_path)
     : db_path_(std::string(db_path)), impl_(std::make_unique<AStorageImpl>(std::string(db_path))) {}
 
 std::vector<User> AStorage::GetAllUsers() { return impl_->GetAllUsers(); }
 
-std::vector<User> AStorage::GetUsersByCondition(const std::string_view& username_pattern, int min_age) {
-  return impl_->GetUsersByCondition(username_pattern, min_age);
+std::vector<UserPartial> AStorage::GetPartialUsers() { return impl_->GetPartialUsers(); }
+
+std::vector<UserPartial> AStorage::GetPartialUsersByAge(int age) {
+  return impl_->GetPartialUsersByAge(age);
 }
 
-std::vector<Order> AStorage::GetAllOrders() { return impl_->GetAllOrders(); }
-
-std::vector<Order> AStorage::GetOrdersByCondition(int user_id, double min_price) {
-  return impl_->GetOrdersByCondition(user_id, min_price);
+std::vector<UserOrder> AStorage::GetUserOrdersByUserId(int user_id) {
+  return impl_->GetUserOrdersByUserId(user_id);
 }
 
-std::vector<UserOrder> AStorage::GetUserOrders() { return impl_->GetUserOrders(); }
+std::vector<DataTypeInDB> AStorage::GetAllDataTypePartials() { return impl_->GetAllDataTypePartials(); }
 
-std::vector<DataTypePartial> AStorage::GetAllDataTypePartials() { return impl_->GetAllDataTypePartials(); }
-
-std::vector<DataTypePartial> AStorage::GetDataTypePartialsByCondition(const std::string& text_pattern) {
-  return impl_->GetDataTypePartialsByCondition(text_pattern);
-}
+// *********************************************************************************************************
+// *********************************************************************************************************
+// *********************************************************************************************************
 
 std::shared_ptr<AStorage> CreateAStorage(const std::string_view& db_path) {
   return std::make_shared<AStorage>(db_path);

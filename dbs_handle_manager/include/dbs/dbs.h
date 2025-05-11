@@ -4,6 +4,14 @@
 #include <tuple>
 #include <vector>
 
+// 获取存储实例的宏，如果获取失败则返回空结果
+#define GET_STORAGE_OR_RETURN_EMPTY(key, storage_type, result_type)            \
+  auto storage = StorageContainer::Instance().GetStorage<storage_type>((key)); \
+  if (!storage) {                                                              \
+    printf("xxx!\n");                                                          \
+    return (result_type){};                                                    \
+  }
+
 namespace mx::dba::dbs {
 
 struct HandleKey {
