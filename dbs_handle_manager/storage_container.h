@@ -163,7 +163,6 @@ class StorageContainer {
     if (auto creator_it = creators_.find(type_idx); creator_it != creators_.end()) {
       EnsureCapacity();
       if (auto storage = creator_it->second(db_path); storage) {
-        printf("[%s:%d]Create storage %s\n", __FILE__, __LINE__, db_path.c_str());
         return std::static_pointer_cast<T>(storage);
       }
     }
