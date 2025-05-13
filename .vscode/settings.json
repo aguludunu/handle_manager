@@ -75,7 +75,7 @@
   // -------------------------------------------------------------------------------------------------------
   "clangd.arguments": [
     "--background-index",
-    "--compile-commands-dir=${workspaceFolder}/build_${buildType}",
+    "--compile-commands-dir=${workspaceFolder}/build_Debug",
     "--completion-style=detailed",
     "--header-insertion=never",
     "--pch-storage=memory",
@@ -119,7 +119,7 @@
   "cmake.configureOnOpen": true,
   "cmake.generator": "Unix Makefiles",
   "cmake.exportCompileCommandsFile": true,
-  "cmake.buildDirectory": "${workspaceFolder}/build_${buildType}",
+  "cmake.buildDirectory": "${workspaceFolder}/build_Debug",
   "sonarlint.pathToCompileCommands": "${workspaceFolder}/compile_commands.json"
   // "sonarlint.analysisExcludesStandalone": [
   //   "${workspaceFolder}/navisdk/middleware/dba/sqlite_wrapper/nds_sqlite/**/*",

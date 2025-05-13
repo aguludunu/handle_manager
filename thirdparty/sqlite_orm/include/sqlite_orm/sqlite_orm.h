@@ -299,9 +299,9 @@ namespace sqlite_orm {
 #include <optional>
 #endif
 
-#if __cpp_lib_optional >= 201606L
+// #if __cpp_lib_optional >= 201606L
 #define SQLITE_ORM_OPTIONAL_SUPPORTED
-#endif
+// #endif
 
 // #include "functional/cxx_type_traits_polyfill.h"
 

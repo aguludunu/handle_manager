@@ -91,4 +91,4 @@ else ()
 endif ()
 
 target_include_directories(${TARGET} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(${TARGET} PRIVATE libzstd_static MXThirdPartyZlib)
+target_link_libraries(${TARGET} PRIVATE libzstd_static MXThirdPartyZlib dl)

@@ -391,7 +391,7 @@ class AStorage : public IStorage {
   // 根据条件获取用户
   std::vector<User> GetUsersByCondition(const std::string_view& username_pattern, int min_age) {
     auto query = sqlite_orm::get_all<User>(
-        where(like(&User::username, username_pattern) && greater_than(&User::age, min_age)));
+        where(like(&User::username, std::string(username_pattern)) && greater_than(&User::age, min_age)));
     auto statement = storage_.prepare(query);
     printf("[%s:%d]sql = %s\n", __FILE__, __LINE__, statement.sql().c_str());
 
@@ -523,7 +523,7 @@ class BStorage : public IStorage {
   // 根据条件获取城市
   std::vector<City> GetCitiesByCondition(const std::string_view& country, int min_population) {
     return storage_.get_all<City>(
-        where(is_equal(&City::country, country) && greater_than(&City::population, min_population)));
+        where(is_equal(&City::country, std::string(country)) && greater_than(&City::population, min_population)));
   }
 
   // 根据条件获取天气记录
